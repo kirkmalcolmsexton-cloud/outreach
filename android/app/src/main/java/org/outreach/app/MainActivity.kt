@@ -336,6 +336,20 @@ private fun OutreachRoot() {
                         onResult(false)
                     }
                 },
+                onLoadTabs = { spreadsheetId, onResult ->
+                    val normalizedSpreadsheetId = normalizeSpreadsheetIdInput(spreadsheetId)
+                    val repository = OutreachServiceLocator.repository
+                    if (repository != null && normalizedSpreadsheetId != null) {
+                        coroutineScope.launch {
+                            val loadedTabs = runCatching {
+                                repository.availableTabs(normalizedSpreadsheetId)
+                            }
+                            onResult(loadedTabs)
+                        }
+                    } else {
+                        onResult(Result.failure(IllegalArgumentException("Invalid spreadsheet id")))
+                    }
+                },
                 onPickSheetFromDrive = {
                     documentLauncher.launch(
                         arrayOf(

@@ -1,11 +1,13 @@
 package org.outreach.feature.settings
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,21 +29,24 @@ fun SettingsScreen(
     savedTabs: Set<String> = emptySet(),
     onSaveConfig: (spreadsheetId: String, tabs: Set<String>) -> Unit = { _, _ -> },
     onValidateSchema: (spreadsheetId: String, tabs: Set<String>, onResult: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    onLoadTabs: (spreadsheetId: String, onResult: (Result<List<String>>) -> Unit) -> Unit = { _, onResult -> onResult(Result.success(emptyList())) },
     onPickSheetFromDrive: () -> Unit = {}
 ) {
+    val zipTabPattern = remember { Regex("^\\d{5}(-\\d{4})?$") }
     var spreadsheetId by remember { mutableStateOf("") }
-    var tabs by remember { mutableStateOf("") }
+    var selectedTabs by remember { mutableStateOf(savedTabs) }
+    var availableZipTabs by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isLoadingTabs by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Not validated") }
     var lastAutoFilledSpreadsheetId by remember { mutableStateOf<String?>(null) }
+    var lastLoadedSpreadsheetId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(savedSpreadsheetId, savedTabs) {
         if (savedSpreadsheetId.isBlank()) return@LaunchedEffect
         val canApplySaved =
             spreadsheetId.isBlank() || spreadsheetId == lastAutoFilledSpreadsheetId
         if (canApplySaved) {
             spreadsheetId = savedSpreadsheetId
-            if (tabs.isBlank() && savedTabs.isNotEmpty()) {
-                tabs = savedTabs.joinToString(",")
-            }
+            selectedTabs = savedTabs
             // #region agent log
             if (BuildConfig.DEBUG) {
                 AgentDebugLogger.log(
@@ -57,6 +62,9 @@ fun SettingsScreen(
             }
             // #endregion
         }
+    }
+    LaunchedEffect(savedTabs) {
+        selectedTabs = savedTabs
     }
     LaunchedEffect(pickedSpreadsheetId) {
         // #region agent log
@@ -103,6 +111,40 @@ fun SettingsScreen(
             }
         }
     }
+    val normalizedSpreadsheetId = remember(spreadsheetId) {
+        normalizeSpreadsheetIdInput(spreadsheetId)
+    }
+    LaunchedEffect(normalizedSpreadsheetId) {
+        val normalized = normalizedSpreadsheetId
+        if (normalized == null) {
+            availableZipTabs = emptyList()
+            isLoadingTabs = false
+            return@LaunchedEffect
+        }
+        if (normalized == lastLoadedSpreadsheetId) return@LaunchedEffect
+        isLoadingTabs = true
+        onLoadTabs(normalized) { result ->
+            result
+                .onSuccess { tabs ->
+                    val zipTabs = tabs
+                        .map { it.trim() }
+                        .filter { it.matches(zipTabPattern) }
+                        .sorted()
+                    availableZipTabs = zipTabs
+                    selectedTabs = selectedTabs.filterTo(mutableSetOf()) { it in zipTabs }
+                    if (zipTabs.isEmpty()) {
+                        status = "No ZIP-named tabs found. Expected 12345 or 12345-6789."
+                    }
+                    lastLoadedSpreadsheetId = normalized
+                    isLoadingTabs = false
+                }
+                .onFailure {
+                    availableZipTabs = emptyList()
+                    status = "Unable to load tabs. Check spreadsheet access and try again."
+                    isLoadingTabs = false
+                }
+        }
+    }
     Column(modifier.padding(16.dp)) {
         Text("Configuration")
         Spacer(modifier = Modifier.height(8.dp))
@@ -129,16 +171,33 @@ fun SettingsScreen(
             label = { Text("Spreadsheet ID") }
         )
         Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            modifier = Modifier.fillMaxWidth(),
-            value = tabs,
-            onValueChange = { tabs = it },
-            label = { Text("Zip code tabs (comma separated)") }
-        )
+        Text("ZIP tabs from spreadsheet")
+        Spacer(modifier = Modifier.height(4.dp))
+        when {
+            normalizedSpreadsheetId == null -> Text("Enter a valid spreadsheet ID to load tabs.")
+            isLoadingTabs -> Text("Loading tabs...")
+            availableZipTabs.isEmpty() -> Text("No matching ZIP tabs available.")
+            else -> {
+                availableZipTabs.forEach { tab ->
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Checkbox(
+                            checked = tab in selectedTabs,
+                            onCheckedChange = { checked ->
+                                selectedTabs = if (checked) {
+                                    selectedTabs + tab
+                                } else {
+                                    selectedTabs - tab
+                                }
+                            }
+                        )
+                        Text(tab, modifier = Modifier.padding(top = 12.dp))
+                    }
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(8.dp))
         Button(
             onClick = {
-                val parsedTabs = tabs.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
                 val normalized = normalizeSpreadsheetIdInput(spreadsheetId)
                 // #region agent log
                 if (BuildConfig.DEBUG) {
@@ -150,7 +209,7 @@ fun SettingsScreen(
                         data = mapOf(
                             "spreadsheetInputPrefix" to spreadsheetId.take(64),
                             "spreadsheetInputLength" to spreadsheetId.length,
-                            "tabsCount" to parsedTabs.size
+                            "tabsCount" to selectedTabs.size
                         )
                     )
                 }
@@ -172,7 +231,7 @@ fun SettingsScreen(
                     // #endregion
                     status = "Could not save: paste a Google Sheets URL (contains /spreadsheets/d/...) or raw Sheet ID."
                 } else {
-                    onSaveConfig(normalized, parsedTabs)
+                    onSaveConfig(normalized, selectedTabs)
                     lastAutoFilledSpreadsheetId = normalized
                     status = "Saved config"
                 }
@@ -183,7 +242,6 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(8.dp))
         Button(
             onClick = {
-                val parsedTabs = tabs.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet()
                 val normalized = normalizeSpreadsheetIdInput(spreadsheetId)
                 // #region agent log
                 if (BuildConfig.DEBUG) {
@@ -195,7 +253,7 @@ fun SettingsScreen(
                         data = mapOf(
                             "spreadsheetInputPrefix" to spreadsheetId.take(64),
                             "spreadsheetInputLength" to spreadsheetId.length,
-                            "tabsCount" to parsedTabs.size
+                            "tabsCount" to selectedTabs.size
                         )
                     )
                 }
@@ -219,7 +277,7 @@ fun SettingsScreen(
                     return@Button
                 }
                 status = "Validating schema..."
-                onValidateSchema(normalized, parsedTabs) { valid ->
+                onValidateSchema(normalized, selectedTabs) { valid ->
                     status = if (valid) "Schema is valid" else "Schema invalid or inaccessible"
                 }
             }
