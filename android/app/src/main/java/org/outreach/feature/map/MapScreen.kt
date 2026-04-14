@@ -1,7 +1,11 @@
 package org.outreach.feature.map
 
+import android.app.DatePickerDialog
 import android.content.Intent
 import android.net.Uri
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -27,24 +31,31 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptor
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
 import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.MapProperties
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
-import org.outreach.app.BuildConfig
-import org.outreach.core.debug.AgentDebugLogger
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.RawHouseholdRow
 import org.outreach.core.model.SourceMetadata
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 @Composable
 fun MapScreen(
     modifier: Modifier = Modifier,
     households: List<HouseholdRecord> = emptyList()
 ) {
+    val prettyDateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
     val context = LocalContext.current
     val hasMapsApiMetadata = remember {
         runCatching {
@@ -71,16 +82,59 @@ fun MapScreen(
             )
         )
     }
+    val allTabsLabel = "All"
     val tabs = data.map { it.source.sheetName }.distinct()
+    val briefCommentOptions = remember(data) { data.map { it.briefComment }.distinct().sorted() }
+    val visitationDates = remember(data) {
+        data.mapNotNull { parseIsoDateOrNull(it.lastVisited) }
+    }
+    val earliestVisitationDate = remember(visitationDates) {
+        visitationDates.minOrNull() ?: LocalDate.now()
+    }
+    val quickRangeOptions = remember {
+        listOf(
+            "7D" to 7L,
+            "30D" to 30L,
+            "90D" to 90L,
+            "All" to null
+        )
+    }
+    val markerIconMap = remember(context) {
+        mapOf(
+            "left_message" to markerIconFor(context, android.R.drawable.ic_dialog_email),
+            "not_home" to markerIconFor(context, android.R.drawable.ic_menu_mylocation),
+            "receptive" to markerIconFor(context, android.R.drawable.checkbox_on_background),
+            "do_not_visit" to markerIconFor(context, android.R.drawable.ic_delete),
+            "moved" to markerIconFor(context, android.R.drawable.ic_menu_directions),
+            "dawat_saath" to markerIconFor(context, android.R.drawable.star_big_on),
+            "other" to markerIconFor(context, android.R.drawable.ic_menu_help)
+        )
+    }
     var viewMode by remember { mutableStateOf("map") }
-    var selectedTab by remember { mutableStateOf(tabs.firstOrNull().orEmpty()) }
+    var selectedTab by remember { mutableStateOf(allTabsLabel) }
+    var selectedBriefComments by remember { mutableStateOf(setOf<String>()) }
+    var startDate by remember { mutableStateOf(earliestVisitationDate) }
+    var endDate by remember { mutableStateOf(LocalDate.now()) }
+    var selectedQuickRange by remember { mutableStateOf("All") }
     LaunchedEffect(tabs) {
-        if (tabs.isNotEmpty() && selectedTab !in tabs) {
-            selectedTab = tabs.first()
+        val validTab = selectedTab == allTabsLabel || selectedTab in tabs
+        if (!validTab) {
+            selectedTab = allTabsLabel
         }
     }
-    val filteredData = remember(data, selectedTab) {
-        data.filter { selectedTab.isBlank() || it.source.sheetName == selectedTab }
+    LaunchedEffect(earliestVisitationDate) {
+        if (startDate.isBefore(earliestVisitationDate)) {
+            startDate = earliestVisitationDate
+        }
+    }
+    val filteredData = remember(data, selectedTab, selectedBriefComments, startDate, endDate) {
+        data.filter { household ->
+            val tabMatches = selectedTab == allTabsLabel || household.source.sheetName == selectedTab
+            val briefCommentMatches = selectedBriefComments.isEmpty() || household.briefComment in selectedBriefComments
+            val visitationDate = parseIsoDateOrNull(household.lastVisited)
+            val dateMatches = visitationDate == null || (!visitationDate.isBefore(startDate) && !visitationDate.isAfter(endDate))
+            tabMatches && briefCommentMatches && dateMatches
+        }
     }
     val mapMarkers = remember(filteredData) {
         filteredData.mapNotNull { household ->
@@ -100,24 +154,6 @@ fun MapScreen(
             cameraPositionState.move(
                 CameraUpdateFactory.newLatLngZoom(defaultCenter, 10f)
             )
-        }
-    }
-    LaunchedEffect(viewMode, filteredData.size, mapMarkers.size, hasMapsApiMetadata) {
-        if (BuildConfig.DEBUG) {
-            // #region agent log
-            AgentDebugLogger.log(
-                runId = "run12",
-                hypothesisId = "H40",
-                location = "MapScreen.kt:mapRenderState",
-                message = "Home map/list render state changed",
-                data = mapOf(
-                    "viewMode" to viewMode,
-                    "filteredCount" to filteredData.size,
-                    "markerCount" to mapMarkers.size,
-                    "hasMapsApiMetadata" to hasMapsApiMetadata
-                )
-            )
-            // #endregion
         }
     }
     Column(modifier.fillMaxSize().padding(12.dp)) {
@@ -147,11 +183,101 @@ fun MapScreen(
         }
         Text(if (viewMode == "map") "Map pins" else "Address list")
         LazyRow {
-            items(tabs) { tab ->
+            items(listOf(allTabsLabel) + tabs) { tab ->
                 FilterChip(
                     selected = selectedTab == tab,
                     onClick = { selectedTab = tab },
                     label = { Text(tab) },
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
+        }
+        LazyRow(modifier = Modifier.padding(top = 8.dp)) {
+            items(briefCommentOptions) { briefComment ->
+                val selected = briefComment in selectedBriefComments
+                FilterChip(
+                    selected = selected,
+                    onClick = {
+                        selectedBriefComments = if (selected) {
+                            selectedBriefComments - briefComment
+                        } else {
+                            selectedBriefComments + briefComment
+                        }
+                    },
+                    label = { Text(formatBriefComment(briefComment)) },
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
+        }
+        LazyRow(modifier = Modifier.padding(top = 8.dp)) {
+            items(quickRangeOptions) { (label, days) ->
+                val selected = selectedQuickRange == label
+                FilterChip(
+                    selected = selected,
+                    onClick = {
+                        selectedQuickRange = label
+                        if (days == null) {
+                            startDate = earliestVisitationDate
+                            endDate = LocalDate.now()
+                        } else {
+                            endDate = LocalDate.now()
+                            val rangeStart = endDate.minusDays(days)
+                            startDate = if (rangeStart.isBefore(earliestVisitationDate)) {
+                                earliestVisitationDate
+                            } else {
+                                rangeStart
+                            }
+                        }
+                    },
+                    label = { Text(label) },
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
+        }
+        LazyRow(modifier = Modifier.padding(top = 8.dp)) {
+            item {
+                FilterChip(
+                    selected = false,
+                    onClick = {
+                        DatePickerDialog(
+                            context,
+                            { _, year, month, dayOfMonth ->
+                                val picked = LocalDate.of(year, month + 1, dayOfMonth)
+                                startDate = picked
+                                if (picked.isAfter(endDate)) {
+                                    endDate = picked
+                                }
+                                selectedQuickRange = "All"
+                            },
+                            startDate.year,
+                            startDate.monthValue - 1,
+                            startDate.dayOfMonth
+                        ).show()
+                    },
+                    label = { Text("Start: ${startDate.format(prettyDateFormatter)}") },
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
+            item {
+                FilterChip(
+                    selected = false,
+                    onClick = {
+                        DatePickerDialog(
+                            context,
+                            { _, year, month, dayOfMonth ->
+                                val picked = LocalDate.of(year, month + 1, dayOfMonth)
+                                endDate = picked
+                                if (picked.isBefore(startDate)) {
+                                    startDate = picked
+                                }
+                                selectedQuickRange = "All"
+                            },
+                            endDate.year,
+                            endDate.monthValue - 1,
+                            endDate.dayOfMonth
+                        ).show()
+                    },
+                    label = { Text("End: ${endDate.format(prettyDateFormatter)}") },
                     modifier = Modifier.padding(end = 8.dp)
                 )
             }
@@ -179,10 +305,16 @@ fun MapScreen(
                 cameraPositionState = cameraPositionState
             ) {
                 mapMarkers.forEach { (household, position) ->
+                    val markerIcon = if (selectedBriefComments.isNotEmpty() && household.briefComment in selectedBriefComments) {
+                        markerIconMap[household.briefComment]
+                    } else {
+                        null
+                    }
                     Marker(
                         state = MarkerState(position = position),
                         title = household.name,
-                        snippet = household.streetAddress
+                        snippet = household.streetAddress,
+                        icon = markerIcon
                     )
                 }
             }
@@ -206,11 +338,53 @@ fun MapScreen(
                         Column(Modifier.padding(12.dp)) {
                             Text(household.name)
                             Text(household.streetAddress)
-                            Text("Tab: ${household.source.sheetName}")
+                            Text("Brief: ${formatBriefComment(household.briefComment)}")
+                            Text(
+                                "Last visited: ${
+                                    parseIsoDateOrNull(household.lastVisited)?.format(prettyDateFormatter) ?: "Not visited"
+                                }"
+                            )
                         }
                     }
                 }
             }
         }
     }
+}
+
+private fun parseIsoDateOrNull(value: String?): LocalDate? {
+    if (value.isNullOrBlank()) return null
+    return runCatching { LocalDate.parse(value, DateTimeFormatter.ISO_DATE) }.getOrNull()
+}
+
+private fun formatBriefComment(value: String): String {
+    return value
+        .replace("_", " ")
+        .split(" ")
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { token ->
+            token.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+        }
+}
+
+private fun markerIconFor(context: android.content.Context, drawableRes: Int): BitmapDescriptor? {
+    return try {
+        val drawable = ContextCompat.getDrawable(context, drawableRes) ?: return null
+        BitmapDescriptorFactory.fromBitmap(drawable.toBitmapForMarker())
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+private fun Drawable.toBitmapForMarker(maxSide: Int = 128): Bitmap {
+    val srcW = if (intrinsicWidth > 0) intrinsicWidth else 64
+    val srcH = if (intrinsicHeight > 0) intrinsicHeight else 64
+    val scale = min(min(maxSide.toFloat() / srcW, maxSide.toFloat() / srcH), 1f)
+    val width = max(1, (srcW * scale).roundToInt())
+    val height = max(1, (srcH * scale).roundToInt())
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    setBounds(0, 0, canvas.width, canvas.height)
+    draw(canvas)
+    return bitmap
 }
