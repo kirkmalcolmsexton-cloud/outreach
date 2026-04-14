@@ -49,51 +49,9 @@ import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import org.json.JSONObject
 import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.RawHouseholdRow
 import org.outreach.core.model.SourceMetadata
-import kotlin.concurrent.thread
-import java.net.HttpURLConnection
-import java.net.URL
-
-// #region agent log
-private fun mapPinNavDebug(
-    hypothesisId: String,
-    location: String,
-    message: String,
-    data: Map<String, Any?> = emptyMap(),
-    runId: String = "nav-from-pin-pre"
-) {
-    val payload = JSONObject().apply {
-        put("sessionId", "1abea7")
-        put("runId", runId)
-        put("hypothesisId", hypothesisId)
-        put("location", location)
-        put("message", message)
-        put("timestamp", System.currentTimeMillis())
-        put("data", JSONObject(data))
-    }
-    android.util.Log.d("MapPinNavDbg", payload.toString())
-    thread(start = true) {
-        for (host in listOf("127.0.0.1", "10.0.2.2")) {
-            runCatching {
-                val conn = (URL("http://$host:7747/ingest/f7368b29-184e-4539-ae18-cb2344a4388c").openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    connectTimeout = 2000
-                    readTimeout = 2000
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("X-Debug-Session-Id", "1abea7")
-                }
-                conn.outputStream.use { it.write(payload.toString().toByteArray()) }
-                conn.responseCode
-                conn.disconnect()
-            }
-        }
-    }
-}
-// #endregion
 
 @Composable
 fun MapScreen(
@@ -389,31 +347,10 @@ fun MapScreen(
                             icon = markerDescriptorForBriefComment(household.briefComment),
                             zIndex = if (isSelected) 2f else 0f,
                             onClick = {
-                                // #region agent log
-                                mapPinNavDebug(
-                                    hypothesisId = "H1_H2",
-                                    location = "MapScreen.kt:Marker.onClick",
-                                    message = "marker_clicked",
-                                    data = mapOf(
-                                        "householdIdSuffix" to household.id.takeLast(8),
-                                        "returnsConsumed" to false
-                                    ),
-                                    runId = "nav-from-pin-post"
-                                )
-                                // #endregion
                                 onHouseholdSelected(household)
                                 false
                             },
                             onInfoWindowClick = {
-                                // #region agent log
-                                mapPinNavDebug(
-                                    hypothesisId = "H_fix_nav",
-                                    location = "MapScreen.kt:Marker.onInfoWindowClick",
-                                    message = "info_window_open_navigation",
-                                    data = mapOf("householdIdSuffix" to household.id.takeLast(8)),
-                                    runId = "nav-from-pin-post"
-                                )
-                                // #endregion
                                 val uri = Uri.parse(
                                     "google.navigation:q=${Uri.encode(household.streetAddress)}"
                                 )
