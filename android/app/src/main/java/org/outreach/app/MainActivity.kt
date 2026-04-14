@@ -117,6 +117,10 @@ private fun OutreachRoot() {
         remember(households, selectedHouseholdId) {
             selectedHouseholdId?.let { id -> households.firstOrNull { it.id == id } }
         }
+    val onHouseholdSelected: (HouseholdRecord) -> Unit = { household ->
+        selectedHouseholdId =
+            if (selectedHouseholdId == household.id) null else household.id
+    }
     var briefCommentPresets by remember { mutableStateOf<List<String>>(emptyList()) }
     var presetsLoading by remember { mutableStateOf(false) }
     LaunchedEffect(savedConfig.spreadsheetId) {
@@ -288,7 +292,7 @@ private fun OutreachRoot() {
                 filterStartDate = filterStartDate,
                 filterEndDate = filterEndDate,
                 selectedHouseholdId = selectedHouseholdId,
-                onHouseholdSelected = { selectedHouseholdId = it.id }
+                onHouseholdSelected = onHouseholdSelected
             )
             "settings" -> SettingsScreen(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
@@ -442,7 +446,7 @@ private fun OutreachRoot() {
                 filterStartDate = filterStartDate,
                 filterEndDate = filterEndDate,
                 selectedHouseholdId = selectedHouseholdId,
-                onHouseholdSelected = { selectedHouseholdId = it.id }
+                onHouseholdSelected = onHouseholdSelected
             )
         }
     }
