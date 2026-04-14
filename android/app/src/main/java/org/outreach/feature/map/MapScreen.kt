@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -13,10 +14,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Directions
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
@@ -25,11 +32,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.maps.android.compose.Circle
 import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
@@ -40,14 +49,58 @@ import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import org.json.JSONObject
 import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.RawHouseholdRow
 import org.outreach.core.model.SourceMetadata
+import kotlin.concurrent.thread
+import java.net.HttpURLConnection
+import java.net.URL
+
+// #region agent log
+private fun mapPinNavDebug(
+    hypothesisId: String,
+    location: String,
+    message: String,
+    data: Map<String, Any?> = emptyMap(),
+    runId: String = "nav-from-pin-pre"
+) {
+    val payload = JSONObject().apply {
+        put("sessionId", "1abea7")
+        put("runId", runId)
+        put("hypothesisId", hypothesisId)
+        put("location", location)
+        put("message", message)
+        put("timestamp", System.currentTimeMillis())
+        put("data", JSONObject(data))
+    }
+    android.util.Log.d("MapPinNavDbg", payload.toString())
+    thread(start = true) {
+        for (host in listOf("127.0.0.1", "10.0.2.2")) {
+            runCatching {
+                val conn = (URL("http://$host:7747/ingest/f7368b29-184e-4539-ae18-cb2344a4388c").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 2000
+                    readTimeout = 2000
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("X-Debug-Session-Id", "1abea7")
+                }
+                conn.outputStream.use { it.write(payload.toString().toByteArray()) }
+                conn.responseCode
+                conn.disconnect()
+            }
+        }
+    }
+}
+// #endregion
 
 @Composable
 fun MapScreen(
     modifier: Modifier = Modifier,
-    households: List<HouseholdRecord> = emptyList()
+    households: List<HouseholdRecord> = emptyList(),
+    selectedHouseholdId: String? = null,
+    onHouseholdSelected: (HouseholdRecord) -> Unit = {}
 ) {
     val prettyDateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
     val context = LocalContext.current
@@ -131,7 +184,12 @@ fun MapScreen(
     }
     val defaultCenter = LatLng(41.8781, -87.6298)
     val cameraPositionState = rememberCameraPositionState()
-    LaunchedEffect(mapMarkers) {
+    val selectionZoom = 15f
+    val haloFillColor = Color(0x403675F6)
+    val haloStrokeColor = Color(0xFF6750A4)
+
+    LaunchedEffect(mapMarkers, selectedHouseholdId) {
+        if (selectedHouseholdId != null) return@LaunchedEffect
         if (mapMarkers.isNotEmpty()) {
             cameraPositionState.move(
                 CameraUpdateFactory.newLatLngZoom(mapMarkers.first().second, 13f)
@@ -141,6 +199,16 @@ fun MapScreen(
                 CameraUpdateFactory.newLatLngZoom(defaultCenter, 10f)
             )
         }
+    }
+
+    LaunchedEffect(selectedHouseholdId, viewMode, mapMarkers) {
+        if (viewMode != "map") return@LaunchedEffect
+        val id = selectedHouseholdId ?: return@LaunchedEffect
+        val target = mapMarkers.firstOrNull { (h, _) -> h.id == id } ?: return@LaunchedEffect
+        cameraPositionState.animate(
+            CameraUpdateFactory.newLatLngZoom(target.second, selectionZoom),
+            400
+        )
     }
     Column(modifier.fillMaxSize().padding(12.dp)) {
         SingleChoiceSegmentedButtonRow(modifier = Modifier.padding(bottom = 8.dp)) {
@@ -296,26 +364,56 @@ fun MapScreen(
                 properties = MapProperties(isMyLocationEnabled = false),
                 cameraPositionState = cameraPositionState
             ) {
+                val selectedPosition = selectedHouseholdId?.let { sid ->
+                    mapMarkers.firstOrNull { (h, _) -> h.id == sid }?.second
+                }
+                selectedPosition?.let { center ->
+                    Circle(
+                        center = center,
+                        radius = 80.0,
+                        fillColor = haloFillColor,
+                        strokeColor = haloStrokeColor,
+                        strokeWidth = 4f,
+                        zIndex = 0.5f
+                    )
+                }
                 mapMarkers.forEach { (household, position) ->
                     key(household.id) {
+                        val isSelected = household.id == selectedHouseholdId
                         val markerState = remember { MarkerState(position = position) }
                             .apply { this.position = position }
                         Marker(
                             state = markerState,
                             title = household.name,
                             snippet = household.streetAddress,
-                            icon = markerDescriptorForBriefComment(household.briefComment)
-                        )
-                    }
-                }
-            }
-        } else {
-            LazyColumn {
-                items(filteredData) { household ->
-                    Card(
-                        modifier = Modifier
-                            .padding(vertical = 6.dp)
-                            .clickable {
+                            icon = markerDescriptorForBriefComment(household.briefComment),
+                            zIndex = if (isSelected) 2f else 0f,
+                            onClick = {
+                                // #region agent log
+                                mapPinNavDebug(
+                                    hypothesisId = "H1_H2",
+                                    location = "MapScreen.kt:Marker.onClick",
+                                    message = "marker_clicked",
+                                    data = mapOf(
+                                        "householdIdSuffix" to household.id.takeLast(8),
+                                        "returnsConsumed" to false
+                                    ),
+                                    runId = "nav-from-pin-post"
+                                )
+                                // #endregion
+                                onHouseholdSelected(household)
+                                false
+                            },
+                            onInfoWindowClick = {
+                                // #region agent log
+                                mapPinNavDebug(
+                                    hypothesisId = "H_fix_nav",
+                                    location = "MapScreen.kt:Marker.onInfoWindowClick",
+                                    message = "info_window_open_navigation",
+                                    data = mapOf("householdIdSuffix" to household.id.takeLast(8)),
+                                    runId = "nav-from-pin-post"
+                                )
+                                // #endregion
                                 val uri = Uri.parse(
                                     "google.navigation:q=${Uri.encode(household.streetAddress)}"
                                 )
@@ -325,16 +423,59 @@ fun MapScreen(
                                     }
                                 )
                             }
+                        )
+                    }
+                }
+            }
+        } else {
+            LazyColumn {
+                items(filteredData) { household ->
+                    val isSelected = household.id == selectedHouseholdId
+                    Card(
+                        modifier = Modifier.padding(vertical = 6.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            }
+                        )
                     ) {
-                        Column(Modifier.padding(12.dp)) {
-                            Text(household.name)
-                            Text(household.streetAddress)
-                            Text("Brief: ${formatBriefComment(household.briefComment)}")
-                            Text(
-                                "Last visited: ${
-                                    parseIsoDateOrNull(household.lastVisited)?.format(prettyDateFormatter) ?: "Not visited"
-                                }"
-                            )
+                        Row(
+                            Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(
+                                Modifier
+                                    .weight(1f)
+                                    .clickable { onHouseholdSelected(household) }
+                            ) {
+                                Text(household.name)
+                                Text(household.streetAddress)
+                                Text("Brief: ${formatBriefComment(household.briefComment)}")
+                                Text(
+                                    "Last visited: ${
+                                        parseIsoDateOrNull(household.lastVisited)?.format(prettyDateFormatter) ?: "Not visited"
+                                    }"
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    val uri = Uri.parse(
+                                        "google.navigation:q=${Uri.encode(household.streetAddress)}"
+                                    )
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, uri).apply {
+                                            setPackage("com.google.android.apps.maps")
+                                        }
+                                    )
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Filled.Directions,
+                                    contentDescription = "Open directions in Google Maps"
+                                )
+                            }
                         }
                     }
                 }

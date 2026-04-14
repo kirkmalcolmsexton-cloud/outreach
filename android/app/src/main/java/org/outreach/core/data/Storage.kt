@@ -137,6 +137,8 @@ interface SheetsApi {
     suspend fun fetchRows(spreadsheetId: String, tabName: String): List<SpreadsheetRowInput>
     suspend fun updateVisit(spreadsheetId: String, update: VisitUpdate)
     suspend fun validateRequiredHeaders(spreadsheetId: String, tabName: String): Boolean
+    /** Allowed brief-comment labels from the `keys` tab [Name] column; empty if tab/column missing. */
+    suspend fun fetchBriefCommentPresets(spreadsheetId: String): List<String>
 }
 
 class StubSheetsApi : SheetsApi {
@@ -144,6 +146,15 @@ class StubSheetsApi : SheetsApi {
     override suspend fun fetchRows(spreadsheetId: String, tabName: String): List<SpreadsheetRowInput> = emptyList()
     override suspend fun updateVisit(spreadsheetId: String, update: VisitUpdate) = Unit
     override suspend fun validateRequiredHeaders(spreadsheetId: String, tabName: String): Boolean = true
+    override suspend fun fetchBriefCommentPresets(spreadsheetId: String): List<String> = listOf(
+        "Not home",
+        "Left message",
+        "Receptive",
+        "Do not visit",
+        "Moved",
+        "Dawat saath",
+        "Other"
+    )
 }
 
 interface GoogleAccessTokenProvider {
@@ -231,6 +242,29 @@ class GoogleSheetsApi(
             path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values:batchUpdate",
             body = body
         )
+    }
+
+    override suspend fun fetchBriefCommentPresets(spreadsheetId: String): List<String> {
+        val encodedRange = java.net.URLEncoder.encode("${GoogleSheetsApi.KEYS_TAB_NAME}!A:Z", "UTF-8")
+        val response = request(
+            method = "GET",
+            path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
+        ) ?: return emptyList()
+        val values = response.optJSONArray("values") ?: return emptyList()
+        if (values.length() == 0) return emptyList()
+        val headers = values.optJSONArray(0)?.toStringList().orEmpty()
+        val canonicalByIndex = headers.map { canonicalHeaderName(it) }
+        val nameIdx = canonicalByIndex.indexOfFirst { it == "name" }
+        if (nameIdx < 0) return emptyList()
+        val orderedUnique = LinkedHashSet<String>()
+        for (i in 1 until values.length()) {
+            val row = values.optJSONArray(i) ?: continue
+            if (nameIdx < row.length()) {
+                val cell = row.optString(nameIdx).trim()
+                if (cell.isNotBlank()) orderedUnique.add(cell)
+            }
+        }
+        return orderedUnique.toList()
     }
 
     override suspend fun validateRequiredHeaders(spreadsheetId: String, tabName: String): Boolean {
@@ -387,13 +421,17 @@ class GoogleSheetsApi(
         val normalized = raw.trim().lowercase().replace(Regex("\\s+"), " ")
         return when (normalized) {
             "brief comments", "brief comment" -> "brief comments"
-            "last visited" -> "last visited"
+            "last visited", "last visit" -> "last visited"
             "name" -> "name"
             "street address" -> "street address"
             "neighborhood" -> "neighborhood"
             "notes" -> "notes"
             else -> null
         }
+    }
+
+    companion object {
+        const val KEYS_TAB_NAME: String = "keys"
     }
 }
 
@@ -454,6 +492,12 @@ class OutreachRepository(
     suspend fun setConfig(config: AppConfig) = configStore.update(config)
 
     suspend fun availableTabs(spreadsheetId: String): List<String> = sheetsApi.listTabs(spreadsheetId)
+
+    suspend fun loadBriefCommentPresets(): List<String> {
+        val cfg = configStore.config.first()
+        if (cfg.spreadsheetId.isBlank()) return emptyList()
+        return sheetsApi.fetchBriefCommentPresets(cfg.spreadsheetId)
+    }
 
     suspend fun isSheetSchemaValid(spreadsheetId: String, selectedTabs: Set<String>): Boolean {
         // #region agent log

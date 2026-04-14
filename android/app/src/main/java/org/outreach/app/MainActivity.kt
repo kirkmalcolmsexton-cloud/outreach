@@ -46,6 +46,7 @@ import org.outreach.core.debug.AgentDebugLogger
 import org.outreach.core.data.OutreachServiceLocator
 import org.outreach.core.data.SyncWorker
 import org.outreach.core.model.AppConfig
+import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.VisitUpdate
 import org.outreach.feature.auth.LoginGateScreen
 import org.outreach.feature.collab.CollaborationScreen
@@ -108,6 +109,19 @@ private fun OutreachRoot() {
     val savedConfig by (OutreachServiceLocator.repository?.config
         ?: flowOf(AppConfig(spreadsheetId = "", selectedTabs = emptySet())))
         .collectAsState(initial = AppConfig(spreadsheetId = "", selectedTabs = emptySet()))
+    var selectedHouseholdId by remember { mutableStateOf<String?>(null) }
+    val selectedHousehold: HouseholdRecord? =
+        remember(households, selectedHouseholdId) {
+            selectedHouseholdId?.let { id -> households.firstOrNull { it.id == id } }
+        }
+    var briefCommentPresets by remember { mutableStateOf<List<String>>(emptyList()) }
+    var presetsLoading by remember { mutableStateOf(false) }
+    LaunchedEffect(savedConfig.spreadsheetId) {
+        val repository = OutreachServiceLocator.repository ?: return@LaunchedEffect
+        presetsLoading = true
+        briefCommentPresets = runCatching { repository.loadBriefCommentPresets() }.getOrDefault(emptyList())
+        presetsLoading = false
+    }
     val documentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -248,7 +262,9 @@ private fun OutreachRoot() {
         when (screen) {
             "home" -> MapScreen(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
-                households = households
+                households = households,
+                selectedHouseholdId = selectedHouseholdId,
+                onHouseholdSelected = { selectedHouseholdId = it.id }
             )
             "settings" -> SettingsScreen(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
@@ -361,7 +377,10 @@ private fun OutreachRoot() {
             )
             "visits" -> VisitLogScreen(
                 modifier = Modifier.padding(innerPadding),
-                onSaveVisit = { householdId, briefComment, notes ->
+                selectedHousehold = selectedHousehold,
+                briefCommentPresets = briefCommentPresets,
+                presetsLoading = presetsLoading,
+                onSaveVisit = { householdId, briefComment, notes, lastVisitedIsoDate ->
                     val repository = OutreachServiceLocator.repository
                     if (repository != null) {
                         coroutineScope.launch {
@@ -370,7 +389,7 @@ private fun OutreachRoot() {
                                     householdId = householdId,
                                     briefComment = briefComment,
                                     notes = notes,
-                                    lastVisitedIsoDate = java.time.LocalDate.now().toString()
+                                    lastVisitedIsoDate = lastVisitedIsoDate
                                 )
                             )
                             repository.flushPendingSync()
@@ -399,7 +418,12 @@ private fun OutreachRoot() {
                     }
                 }
             )
-            else -> MapScreen(Modifier.padding(innerPadding), households = households)
+            else -> MapScreen(
+                Modifier.padding(innerPadding),
+                households = households,
+                selectedHouseholdId = selectedHouseholdId,
+                onHouseholdSelected = { selectedHouseholdId = it.id }
+            )
         }
     }
 }
