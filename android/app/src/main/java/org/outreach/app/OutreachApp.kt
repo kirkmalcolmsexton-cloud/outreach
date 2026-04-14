@@ -31,7 +31,7 @@ class OutreachApp : Application(), Configuration.Provider {
             dao = database.dao(),
             configStore = configStore,
             sheetsApi = sheetsApi,
-            geocoder = GeocodingService()
+            geocoder = GeocodingService(this)
         )
         val collaborationRepository = CollaborationRepository(FirebaseFirestore.getInstance())
         OutreachServiceLocator.initialize(repository, collaborationRepository)

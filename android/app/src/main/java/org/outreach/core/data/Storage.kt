@@ -1,6 +1,7 @@
 package org.outreach.core.data
 
 import android.content.Context
+import android.location.Geocoder
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -396,9 +397,30 @@ class GoogleSheetsApi(
     }
 }
 
-class GeocodingService {
-    suspend fun geocodeAddress(address: String): Pair<Double, Double>? {
-        return null
+class GeocodingService(
+    private val context: Context
+) {
+    suspend fun geocodeAddress(address: String): Pair<Double, Double>? = withContext(Dispatchers.IO) {
+        val latLng = runCatching {
+            val geocoder = Geocoder(context)
+            val result = geocoder.getFromLocationName(address, 1).orEmpty().firstOrNull()
+            result?.latitude?.let { lat -> result.longitude.let { lng -> lat to lng } }
+        }.getOrNull()
+        if (BuildConfig.DEBUG) {
+            // #region agent log
+            AgentDebugLogger.log(
+                runId = "run14",
+                hypothesisId = "H54",
+                location = "Storage.kt:GeocodingService.geocodeAddress",
+                message = "Geocoding attempted for household address",
+                data = mapOf(
+                    "addressPrefix" to address.take(48),
+                    "resolved" to (latLng != null)
+                )
+            )
+            // #endregion
+        }
+        latLng
     }
 }
 
@@ -492,6 +514,8 @@ class OutreachRepository(
         val entities = mutableListOf<HouseholdEntity>()
         cfg.selectedTabs.forEach { tab ->
             val rows = sheetsApi.fetchRows(cfg.spreadsheetId, tab)
+            var geocodedCount = 0
+            var ungeocodedCount = 0
             // #region agent log
             if (BuildConfig.DEBUG) {
                 AgentDebugLogger.log(
@@ -509,6 +533,7 @@ class OutreachRepository(
             rows.forEachIndexed { index, row ->
                 val parsed = parseSpreadsheetRow(row, SourceMetadata(tab, index + 2))
                 val latLng = geocoder.geocodeAddress(parsed.streetAddress)
+                if (latLng == null) ungeocodedCount++ else geocodedCount++
                 entities += HouseholdEntity(
                     id = parsed.id,
                     name = parsed.name,
@@ -523,6 +548,22 @@ class OutreachRepository(
                     longitude = latLng?.second,
                     assignedTo = null
                 )
+            }
+            if (BuildConfig.DEBUG) {
+                // #region agent log
+                AgentDebugLogger.log(
+                    runId = "run13",
+                    hypothesisId = "H51",
+                    location = "Storage.kt:syncFromSheet:geocodeSummary",
+                    message = "Tab geocode summary computed",
+                    data = mapOf(
+                        "tab" to tab,
+                        "rowsCount" to rows.size,
+                        "geocodedCount" to geocodedCount,
+                        "ungeocodedCount" to ungeocodedCount
+                    )
+                )
+                // #endregion
             }
         }
         dao.upsertHouseholds(entities)

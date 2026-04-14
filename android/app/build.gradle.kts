@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,6 +8,39 @@ plugins {
 }
 
 android {
+    val localProperties = Properties().apply {
+        val file = rootProject.file("local.properties")
+        if (file.exists()) {
+            file.inputStream().use { load(it) }
+        }
+    }
+    val rootGradleProperties = Properties().apply {
+        val file = rootProject.file("gradle.properties")
+        if (file.exists()) {
+            file.inputStream().use { load(it) }
+        }
+    }
+    val parentGradleProperties = Properties().apply {
+        val file = project.file("../gradle.properties")
+        if (file.exists()) {
+            file.inputStream().use { load(it) }
+        }
+    }
+    val userGradleProperties = Properties().apply {
+        val file = File(System.getProperty("user.home"), ".gradle/gradle.properties")
+        if (file.exists()) {
+            file.inputStream().use { load(it) }
+        }
+    }
+    val mapsApiKey = sequenceOf(
+        providers.gradleProperty("MAPS_API_KEY").orNull,
+        rootGradleProperties.getProperty("MAPS_API_KEY"),
+        parentGradleProperties.getProperty("MAPS_API_KEY"),
+        userGradleProperties.getProperty("MAPS_API_KEY"),
+        localProperties.getProperty("MAPS_API_KEY"),
+        System.getenv("MAPS_API_KEY")
+    ).firstOrNull { !it.isNullOrBlank() } ?: ""
+
     namespace = "org.outreach.app"
     compileSdk = 34
 
@@ -16,6 +51,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        resValue("string", "google_maps_key", mapsApiKey)
     }
 
     buildTypes {
@@ -68,6 +104,7 @@ dependencies {
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("com.google.android.gms:play-services-basement:18.5.0")
     implementation("com.google.android.gms:play-services-maps:19.0.0")
+    implementation("com.google.maps.android:maps-compose:4.4.1")
     implementation("com.google.firebase:firebase-auth-ktx:23.1.0")
     implementation("com.google.firebase:firebase-firestore-ktx:25.1.0")
 
