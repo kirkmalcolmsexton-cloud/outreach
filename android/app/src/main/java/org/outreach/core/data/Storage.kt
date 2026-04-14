@@ -34,6 +34,7 @@ import org.outreach.core.model.RawHouseholdRow
 import org.outreach.core.model.SourceMetadata
 import org.outreach.core.model.SpreadsheetRowInput
 import org.outreach.core.model.VisitUpdate
+import org.outreach.core.model.createHouseholdId
 import org.outreach.core.model.parseSpreadsheetRow
 import org.json.JSONArray
 import org.json.JSONObject
@@ -70,6 +71,18 @@ data class PendingSyncEntity(
     val rowNumber: Int?
 )
 
+@Entity(tableName = "pending_append")
+data class PendingAppendEntity(
+    @PrimaryKey val householdId: String,
+    val name: String,
+    val streetAddress: String,
+    val neighborhood: String,
+    val sheetName: String
+)
+
+/** Result of appending a household row; [rowNumber] is the sheet row (1-based). */
+data class AppendHouseholdResult(val rowNumber: Int)
+
 @Dao
 interface OutreachDao {
     @Query("SELECT * FROM households")
@@ -81,11 +94,23 @@ interface OutreachDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPending(sync: PendingSyncEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPendingAppend(entity: PendingAppendEntity)
+
     @Query("SELECT * FROM pending_sync ORDER BY id ASC")
     suspend fun pendingSync(): List<PendingSyncEntity>
 
+    @Query("SELECT * FROM pending_append ORDER BY householdId ASC")
+    suspend fun pendingAppends(): List<PendingAppendEntity>
+
     @Query("DELETE FROM pending_sync WHERE id = :id")
     suspend fun deletePending(id: Long)
+
+    @Query("DELETE FROM pending_append WHERE householdId = :householdId")
+    suspend fun deletePendingAppend(householdId: String)
+
+    @Query("UPDATE households SET rowNumber = :rowNumber WHERE id = :id")
+    suspend fun updateHouseholdRowNumber(id: String, rowNumber: Int)
 
     @Query("UPDATE households SET briefComment = :briefComment, notes = :notes, lastVisited = :lastVisited WHERE id = :id")
     suspend fun updateVisit(id: String, briefComment: String, notes: String?, lastVisited: String)
@@ -97,7 +122,10 @@ interface OutreachDao {
     suspend fun householdById(id: String): HouseholdEntity?
 }
 
-@Database(entities = [HouseholdEntity::class, PendingSyncEntity::class], version = 2)
+@Database(
+    entities = [HouseholdEntity::class, PendingSyncEntity::class, PendingAppendEntity::class],
+    version = 3
+)
 @TypeConverters
 abstract class OutreachDatabase : RoomDatabase() {
     abstract fun dao(): OutreachDao
@@ -152,6 +180,13 @@ interface SheetsApi {
     suspend fun listTabs(spreadsheetId: String): List<String>
     suspend fun fetchRows(spreadsheetId: String, tabName: String): List<SpreadsheetRowInput>
     suspend fun updateVisit(spreadsheetId: String, update: VisitUpdate)
+    suspend fun appendHouseholdRow(
+        spreadsheetId: String,
+        tabName: String,
+        name: String,
+        streetAddress: String,
+        neighborhood: String
+    ): AppendHouseholdResult?
     suspend fun validateRequiredHeaders(spreadsheetId: String, tabName: String): Boolean
     /** Allowed brief-comment labels from the `keys` tab [Name] column; empty if tab/column missing. */
     suspend fun fetchBriefCommentPresets(spreadsheetId: String): List<String>
@@ -161,6 +196,13 @@ class StubSheetsApi : SheetsApi {
     override suspend fun listTabs(spreadsheetId: String): List<String> = listOf("60618", "60657")
     override suspend fun fetchRows(spreadsheetId: String, tabName: String): List<SpreadsheetRowInput> = emptyList()
     override suspend fun updateVisit(spreadsheetId: String, update: VisitUpdate) = Unit
+    override suspend fun appendHouseholdRow(
+        spreadsheetId: String,
+        tabName: String,
+        name: String,
+        streetAddress: String,
+        neighborhood: String
+    ): AppendHouseholdResult? = AppendHouseholdResult(rowNumber = 2)
     override suspend fun validateRequiredHeaders(spreadsheetId: String, tabName: String): Boolean = true
     override suspend fun fetchBriefCommentPresets(spreadsheetId: String): List<String> = listOf(
         "Not home",
@@ -237,6 +279,7 @@ class GoogleSheetsApi(
     override suspend fun updateVisit(spreadsheetId: String, update: VisitUpdate) {
         val sheetName = update.sheetName ?: return
         val rowNumber = update.rowNumber ?: return
+        if (rowNumber < 1) return
         val headerMap = headerIndex(spreadsheetId, sheetName)
         val briefCol = headerMap["brief comments"] ?: return
         val lastVisitedCol = headerMap["last visited"] ?: return
@@ -258,6 +301,41 @@ class GoogleSheetsApi(
             path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values:batchUpdate",
             body = body
         )
+    }
+
+    override suspend fun appendHouseholdRow(
+        spreadsheetId: String,
+        tabName: String,
+        name: String,
+        streetAddress: String,
+        neighborhood: String
+    ): AppendHouseholdResult? {
+        val headers = fetchHeaderRowCells(spreadsheetId, tabName)
+        if (headers.isEmpty()) return null
+        val row = MutableList(headers.size) { "" }
+        headers.forEachIndexed { idx, header ->
+            when (canonicalHeaderName(header)) {
+                "name" -> row[idx] = name
+                "street address" -> row[idx] = streetAddress
+                "neighborhood" -> row[idx] = neighborhood
+                "brief comments", "last visited", "notes" -> { }
+                else -> { }
+            }
+        }
+        val encodedRange = java.net.URLEncoder.encode("$tabName!A:Z", "UTF-8")
+        val path =
+            "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values/$encodedRange:append" +
+                "?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS"
+        val inner = JSONArray()
+        row.forEach { inner.put(it) }
+        val values = JSONArray().put(inner)
+        val body = JSONObject(mapOf("values" to values))
+        val response = request(method = "POST", path = path, body = body) ?: return null
+        val updates = response.optJSONObject("updates") ?: return null
+        val updatedRange = updates.optString("updatedRange").trim()
+        if (updatedRange.isBlank()) return null
+        val rowNum = parseSheetRowFromUpdatedRange(updatedRange) ?: return null
+        return AppendHouseholdResult(rowNumber = rowNum)
     }
 
     override suspend fun fetchBriefCommentPresets(spreadsheetId: String): List<String> {
@@ -395,6 +473,17 @@ class GoogleSheetsApi(
         }
     }
 
+    private suspend fun fetchHeaderRowCells(spreadsheetId: String, tabName: String): List<String> {
+        val encodedRange = java.net.URLEncoder.encode("$tabName!1:1", "UTF-8")
+        val response = request(
+            method = "GET",
+            path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
+        ) ?: return emptyList()
+        val values = response.optJSONArray("values") ?: return emptyList()
+        if (values.length() == 0) return emptyList()
+        return values.optJSONArray(0)?.toStringList().orEmpty()
+    }
+
     private suspend fun headerIndex(spreadsheetId: String, tabName: String): Map<String, String> {
         val encodedRange = java.net.URLEncoder.encode("$tabName!1:1", "UTF-8")
         val response = request(
@@ -449,6 +538,14 @@ class GoogleSheetsApi(
     companion object {
         const val KEYS_TAB_NAME: String = "keys"
     }
+}
+
+/** Parses starting row from a Sheets A1 range like `Tab!A10:F10` or `'My Tab'!B2:E2`. */
+internal fun parseSheetRowFromUpdatedRange(updatedRange: String): Int? {
+    val bang = updatedRange.lastIndexOf('!')
+    val afterBang = if (bang >= 0) updatedRange.substring(bang + 1) else updatedRange
+    val m = Regex("^([A-Za-z]+)(\\d+)").find(afterBang.trim()) ?: return null
+    return m.groupValues[2].toIntOrNull()
 }
 
 class GeocodingService(
@@ -644,12 +741,95 @@ class OutreachRepository(
         )
     }
 
+    /**
+     * Adds a new household row to the sheet when online, or queues [PendingAppendEntity] when append fails.
+     * Local row uses [HouseholdEntity.rowNumber] `-1` until the sheet row exists.
+     */
+    suspend fun addHousehold(
+        tabName: String,
+        name: String,
+        streetAddress: String,
+        neighborhood: String
+    ): String? {
+        val n = name.trim()
+        val s = streetAddress.trim()
+        val nh = neighborhood.trim()
+        if (n.isBlank() || s.isBlank()) return null
+        val cfg = configStore.config.first()
+        if (cfg.spreadsheetId.isBlank()) return null
+
+        val id = createHouseholdId(n, s, nh)
+        val latLng = geocoder.geocodeAddress(s)
+        val rowInput = SpreadsheetRowInput(
+            briefComments = "",
+            lastVisited = null,
+            name = n,
+            streetAddress = s,
+            neighborhood = nh,
+            notes = null
+        )
+        val parsed = parseSpreadsheetRow(rowInput, SourceMetadata(tabName, 2))
+        val appendResult = runCatching {
+            sheetsApi.appendHouseholdRow(cfg.spreadsheetId, tabName, n, s, nh)
+        }.getOrNull()
+        val rowNum = appendResult?.rowNumber?.takeIf { it >= 1 } ?: -1
+        val entity = HouseholdEntity(
+            id = id,
+            name = parsed.name,
+            streetAddress = parsed.streetAddress,
+            neighborhood = parsed.neighborhood,
+            briefComment = parsed.briefComment,
+            lastVisited = parsed.lastVisited,
+            notes = parsed.notes,
+            sheetName = tabName,
+            rowNumber = if (rowNum >= 1) rowNum else -1,
+            latitude = latLng?.first,
+            longitude = latLng?.second,
+            assignedTo = null
+        )
+        dao.upsertHouseholds(listOf(entity))
+        if (rowNum < 1) {
+            dao.insertPendingAppend(
+                PendingAppendEntity(
+                    householdId = id,
+                    name = n,
+                    streetAddress = s,
+                    neighborhood = nh,
+                    sheetName = tabName
+                )
+            )
+        }
+        return id
+    }
+
     suspend fun assignHousehold(householdId: String, assignee: String?) = dao.assign(householdId, assignee)
 
     suspend fun flushPendingSync() {
         val cfg = configStore.config.first()
         if (cfg.spreadsheetId.isBlank()) return
+        dao.pendingAppends().forEach { pending ->
+            val result = runCatching {
+                sheetsApi.appendHouseholdRow(
+                    cfg.spreadsheetId,
+                    pending.sheetName,
+                    pending.name,
+                    pending.streetAddress,
+                    pending.neighborhood
+                )
+            }.getOrNull()
+            if (result != null && result.rowNumber >= 1) {
+                dao.updateHouseholdRowNumber(pending.householdId, result.rowNumber)
+                dao.deletePendingAppend(pending.householdId)
+            }
+        }
         dao.pendingSync().forEach { pending ->
+            val household = dao.householdById(pending.householdId)
+            val rowNumber = when {
+                household != null && household.rowNumber >= 1 -> household.rowNumber
+                pending.rowNumber != null && pending.rowNumber >= 1 -> pending.rowNumber
+                else -> null
+            }
+            if (rowNumber == null) return@forEach
             sheetsApi.updateVisit(
                 cfg.spreadsheetId,
                 VisitUpdate(
@@ -657,8 +837,8 @@ class OutreachRepository(
                     briefComment = pending.briefComment,
                     notes = pending.notes,
                     lastVisitedIsoDate = pending.lastVisitedIsoDate,
-                    sheetName = pending.sheetName,
-                    rowNumber = pending.rowNumber
+                    sheetName = pending.sheetName ?: household?.sheetName,
+                    rowNumber = rowNumber
                 )
             )
             dao.deletePending(pending.id)
@@ -680,8 +860,8 @@ class SyncWorker(
     override suspend fun doWork(): Result {
         val repository = OutreachServiceLocator.repository ?: return Result.retry()
         return runCatching {
-            repository.syncFromSheet()
             repository.flushPendingSync()
+            repository.syncFromSheet()
             Result.success()
         }.getOrElse { Result.retry() }
     }

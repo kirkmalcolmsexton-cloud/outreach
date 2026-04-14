@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,10 +14,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Directions
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
@@ -32,9 +35,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.maps.android.compose.Circle
 import com.google.android.gms.maps.model.BitmapDescriptor
@@ -60,8 +63,12 @@ fun MapScreen(
     filterStartDate: LocalDate = LocalDate.now(),
     filterEndDate: LocalDate = LocalDate.now(),
     selectedHouseholdId: String? = null,
-    onHouseholdSelected: (HouseholdRecord) -> Unit = {}
+    onHouseholdSelected: (HouseholdRecord) -> Unit = {},
+    selectedTabs: Set<String> = emptySet(),
+    onAddHousehold: (tabName: String, name: String, streetAddress: String, neighborhood: String) -> Unit =
+        { _, _, _, _ -> }
 ) {
+    var showAddPersonDialog by remember { mutableStateOf(false) }
     val prettyDateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
     val context = LocalContext.current
     val hasMapsApiMetadata = remember {
@@ -148,7 +155,8 @@ fun MapScreen(
             400
         )
     }
-    Column(modifier.fillMaxSize().padding(12.dp)) {
+    Box(modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().padding(12.dp)) {
         SingleChoiceSegmentedButtonRow(modifier = Modifier.padding(bottom = 8.dp)) {
             SegmentedButton(
                 selected = viewMode == "map",
@@ -314,6 +322,26 @@ fun MapScreen(
                     }
                 }
             }
+        }
+    }
+        FloatingActionButton(
+            onClick = { showAddPersonDialog = true },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            content = {
+                Icon(Icons.Filled.Add, contentDescription = "Add person")
+            }
+        )
+        if (showAddPersonDialog) {
+            AddPersonDialog(
+                selectedTabs = selectedTabs,
+                onDismiss = { showAddPersonDialog = false },
+                onConfirm = { tab, name, street, neighborhood ->
+                    showAddPersonDialog = false
+                    onAddHousehold(tab, name, street, neighborhood)
+                }
+            )
         }
     }
 }

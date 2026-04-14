@@ -281,7 +281,9 @@ private fun OutreachRoot() {
         }
     ) { innerPadding ->
         LaunchedEffect(Unit) {
-            OutreachServiceLocator.repository?.syncFromSheet()
+            val repository = OutreachServiceLocator.repository ?: return@LaunchedEffect
+            repository.flushPendingSync()
+            repository.syncFromSheet()
         }
         when (screen) {
             "home" -> MapScreen(
@@ -292,7 +294,17 @@ private fun OutreachRoot() {
                 filterStartDate = filterStartDate,
                 filterEndDate = filterEndDate,
                 selectedHouseholdId = selectedHouseholdId,
-                onHouseholdSelected = onHouseholdSelected
+                onHouseholdSelected = onHouseholdSelected,
+                selectedTabs = savedConfig.selectedTabs,
+                onAddHousehold = { tabName, name, streetAddress, neighborhood ->
+                    coroutineScope.launch {
+                        val repository = OutreachServiceLocator.repository ?: return@launch
+                        val id = repository.addHousehold(tabName, name, streetAddress, neighborhood)
+                            ?: return@launch
+                        repository.flushPendingSync()
+                        selectedHouseholdId = id
+                    }
+                }
             )
             "settings" -> SettingsScreen(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
@@ -446,7 +458,17 @@ private fun OutreachRoot() {
                 filterStartDate = filterStartDate,
                 filterEndDate = filterEndDate,
                 selectedHouseholdId = selectedHouseholdId,
-                onHouseholdSelected = onHouseholdSelected
+                onHouseholdSelected = onHouseholdSelected,
+                selectedTabs = savedConfig.selectedTabs,
+                onAddHousehold = { tabName, name, streetAddress, neighborhood ->
+                    coroutineScope.launch {
+                        val repository = OutreachServiceLocator.repository ?: return@launch
+                        val id = repository.addHousehold(tabName, name, streetAddress, neighborhood)
+                            ?: return@launch
+                        repository.flushPendingSync()
+                        selectedHouseholdId = id
+                    }
+                }
             )
         }
     }
