@@ -1,13 +1,17 @@
 package org.outreach.feature.settings
 
+import android.app.DatePickerDialog
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,37 +21,94 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import org.outreach.app.BuildConfig
 import org.outreach.core.debug.AgentDebugLogger
+import org.outreach.core.model.AppConfig
+import org.outreach.feature.map.formatBriefComment
 
 @Composable
 fun SettingsScreen(
     modifier: Modifier = Modifier,
     pickedSpreadsheetId: String? = null,
-    savedSpreadsheetId: String = "",
-    savedTabs: Set<String> = emptySet(),
-    onSaveConfig: (spreadsheetId: String, tabs: Set<String>) -> Unit = { _, _ -> },
+    savedConfig: AppConfig = AppConfig(),
+    briefCommentOptions: List<String> = emptyList(),
+    earliestVisitationDate: LocalDate = LocalDate.now(),
+    onUpdateConfig: (AppConfig) -> Unit = {},
     onValidateSchema: (spreadsheetId: String, tabs: Set<String>, onResult: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     onLoadTabs: (spreadsheetId: String, onResult: (Result<List<String>>) -> Unit) -> Unit = { _, onResult -> onResult(Result.success(emptyList())) },
     onPickSheetFromDrive: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val prettyDateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
     val zipTabPattern = remember { Regex("^\\d{5}(-\\d{4})?$") }
     var spreadsheetId by remember { mutableStateOf("") }
-    var selectedTabs by remember { mutableStateOf(savedTabs) }
+    var selectedTabs by remember { mutableStateOf(savedConfig.selectedTabs) }
     var availableZipTabs by remember { mutableStateOf<List<String>>(emptyList()) }
     var isLoadingTabs by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Not validated") }
     var lastAutoFilledSpreadsheetId by remember { mutableStateOf<String?>(null) }
     var lastLoadedSpreadsheetId by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(savedSpreadsheetId, savedTabs) {
-        if (savedSpreadsheetId.isBlank()) return@LaunchedEffect
+
+    var selectedBriefComments by remember { mutableStateOf(savedConfig.mapBriefCommentFilter) }
+    var startDate by remember {
+        mutableStateOf(
+            savedConfig.mapDateStartIso?.let { LocalDate.parse(it) } ?: earliestVisitationDate
+        )
+    }
+    var endDate by remember {
+        mutableStateOf(
+            savedConfig.mapDateEndIso?.let { LocalDate.parse(it) } ?: LocalDate.now()
+        )
+    }
+    var selectedQuickRange by remember { mutableStateOf(savedConfig.mapQuickRange) }
+
+    val quickRangeOptions = remember {
+        listOf(
+            "7D" to 7L,
+            "30D" to 30L,
+            "90D" to 90L,
+            "All" to null
+        )
+    }
+
+    fun resolvedSpreadsheetIdForPersist(): String =
+        normalizeSpreadsheetIdInput(spreadsheetId) ?: savedConfig.spreadsheetId
+
+    fun persistMapFiltersOnly() {
+        onUpdateConfig(
+            savedConfig.copy(
+                mapBriefCommentFilter = selectedBriefComments,
+                mapDateStartIso = startDate.toString(),
+                mapDateEndIso = endDate.toString(),
+                mapQuickRange = selectedQuickRange
+            )
+        )
+    }
+
+    fun persistFullConfig(selectedTabsOverride: Set<String>) {
+        onUpdateConfig(
+            AppConfig(
+                spreadsheetId = resolvedSpreadsheetIdForPersist(),
+                selectedTabs = selectedTabsOverride,
+                mapBriefCommentFilter = selectedBriefComments,
+                mapDateStartIso = startDate.toString(),
+                mapDateEndIso = endDate.toString(),
+                mapQuickRange = selectedQuickRange
+            )
+        )
+    }
+
+    LaunchedEffect(savedConfig.spreadsheetId, savedConfig.selectedTabs) {
+        if (savedConfig.spreadsheetId.isBlank()) return@LaunchedEffect
         val canApplySaved =
             spreadsheetId.isBlank() || spreadsheetId == lastAutoFilledSpreadsheetId
         if (canApplySaved) {
-            spreadsheetId = savedSpreadsheetId
-            selectedTabs = savedTabs
-            // #region agent log
+            spreadsheetId = savedConfig.spreadsheetId
+            selectedTabs = savedConfig.selectedTabs
             if (BuildConfig.DEBUG) {
                 AgentDebugLogger.log(
                     runId = "run8",
@@ -55,19 +116,37 @@ fun SettingsScreen(
                     location = "SettingsScreen.kt:LaunchedEffect(savedSpreadsheetId)",
                     message = "Loaded saved configuration into settings fields",
                     data = mapOf(
-                        "savedSpreadsheetPrefix" to savedSpreadsheetId.take(64),
-                        "savedTabsCount" to savedTabs.size
+                        "savedSpreadsheetPrefix" to savedConfig.spreadsheetId.take(64),
+                        "savedTabsCount" to savedConfig.selectedTabs.size
                     )
                 )
             }
-            // #endregion
         }
     }
-    LaunchedEffect(savedTabs) {
-        selectedTabs = savedTabs
+    LaunchedEffect(savedConfig.selectedTabs) {
+        selectedTabs = savedConfig.selectedTabs
     }
+
+    LaunchedEffect(
+        savedConfig.mapBriefCommentFilter,
+        savedConfig.mapDateStartIso,
+        savedConfig.mapDateEndIso,
+        savedConfig.mapQuickRange,
+        earliestVisitationDate
+    ) {
+        selectedBriefComments = savedConfig.mapBriefCommentFilter
+        startDate = savedConfig.mapDateStartIso?.let { LocalDate.parse(it) } ?: earliestVisitationDate
+        endDate = savedConfig.mapDateEndIso?.let { LocalDate.parse(it) } ?: LocalDate.now()
+        selectedQuickRange = savedConfig.mapQuickRange
+    }
+
+    LaunchedEffect(earliestVisitationDate) {
+        if (startDate.isBefore(earliestVisitationDate)) {
+            startDate = earliestVisitationDate
+        }
+    }
+
     LaunchedEffect(pickedSpreadsheetId) {
-        // #region agent log
         if (BuildConfig.DEBUG) {
             AgentDebugLogger.log(
                 runId = "run2",
@@ -81,7 +160,6 @@ fun SettingsScreen(
                 )
             )
         }
-        // #endregion
         if (!pickedSpreadsheetId.isNullOrBlank()) {
             val shouldApplyPickedValue =
                 spreadsheetId.isBlank() || spreadsheetId == lastAutoFilledSpreadsheetId
@@ -94,7 +172,6 @@ fun SettingsScreen(
                     "Spreadsheet selected from Drive"
                 }
             } else {
-                // #region agent log
                 if (BuildConfig.DEBUG) {
                     AgentDebugLogger.log(
                         runId = "run6",
@@ -107,7 +184,6 @@ fun SettingsScreen(
                         )
                     )
                 }
-                // #endregion
             }
         }
     }
@@ -154,7 +230,6 @@ fun SettingsScreen(
             onValueChange = {
                 spreadsheetId = it
                 if (BuildConfig.DEBUG && (it.startsWith("http") || it.contains("/spreadsheets/d/"))) {
-                    // #region agent log
                     AgentDebugLogger.log(
                         runId = "run6",
                         hypothesisId = "H19",
@@ -165,41 +240,151 @@ fun SettingsScreen(
                             "inputLength" to it.length
                         )
                     )
-                    // #endregion
                 }
             },
             label = { Text("Spreadsheet ID") }
         )
         Spacer(modifier = Modifier.height(8.dp))
-        Text("ZIP tabs from spreadsheet")
+        Text("ZIP codes")
         Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            "Choose which ZIP tabs to sync and show on the map (multi-select).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
         when {
-            normalizedSpreadsheetId == null -> Text("Enter a valid spreadsheet ID to load tabs.")
+            normalizedSpreadsheetId == null -> Text("Enter a valid spreadsheet ID to load ZIP tabs.")
             isLoadingTabs -> Text("Loading tabs...")
             availableZipTabs.isEmpty() -> Text("No matching ZIP tabs available.")
             else -> {
-                availableZipTabs.forEach { tab ->
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Checkbox(
-                            checked = tab in selectedTabs,
-                            onCheckedChange = { checked ->
-                                selectedTabs = if (checked) {
-                                    selectedTabs + tab
-                                } else {
+                LazyRow {
+                    items(availableZipTabs.sorted()) { tab ->
+                        val selected = tab in selectedTabs
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                val newTabs = if (selected) {
                                     selectedTabs - tab
+                                } else {
+                                    selectedTabs + tab
                                 }
-                            }
+                                selectedTabs = newTabs
+                                persistFullConfig(newTabs)
+                            },
+                            label = { Text(tab) },
+                            modifier = Modifier.padding(end = 8.dp)
                         )
-                        Text(tab, modifier = Modifier.padding(top = 12.dp))
                     }
                 }
             }
         }
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Home map filters")
         Spacer(modifier = Modifier.height(8.dp))
+        Text("Brief comment filter")
+        Spacer(modifier = Modifier.height(4.dp))
+        if (briefCommentOptions.isEmpty()) {
+            Text("No brief comments in loaded data yet. Sync households, then pick filters here.")
+        } else {
+            LazyRow {
+                items(briefCommentOptions) { briefComment ->
+                    val selected = briefComment in selectedBriefComments
+                    FilterChip(
+                        selected = selected,
+                        onClick = {
+                            selectedBriefComments = if (selected) {
+                                selectedBriefComments - briefComment
+                            } else {
+                                selectedBriefComments + briefComment
+                            }
+                            persistMapFiltersOnly()
+                        },
+                        label = { Text(formatBriefComment(briefComment)) },
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("Last visited date range")
+        Spacer(modifier = Modifier.height(4.dp))
+        LazyRow {
+            items(quickRangeOptions) { (label, days) ->
+                val selected = selectedQuickRange == label
+                FilterChip(
+                    selected = selected,
+                    onClick = {
+                        selectedQuickRange = label
+                        if (days == null) {
+                            startDate = earliestVisitationDate
+                            endDate = LocalDate.now()
+                        } else {
+                            endDate = LocalDate.now()
+                            val rangeStart = endDate.minusDays(days)
+                            startDate = if (rangeStart.isBefore(earliestVisitationDate)) {
+                                earliestVisitationDate
+                            } else {
+                                rangeStart
+                            }
+                        }
+                        persistMapFiltersOnly()
+                    },
+                    label = { Text(label) },
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
+        }
+        Row(modifier = Modifier.padding(top = 8.dp)) {
+            FilterChip(
+                selected = false,
+                onClick = {
+                    DatePickerDialog(
+                        context,
+                        { _, year, month, dayOfMonth ->
+                            val picked = LocalDate.of(year, month + 1, dayOfMonth)
+                            startDate = picked
+                            if (picked.isAfter(endDate)) {
+                                endDate = picked
+                            }
+                            selectedQuickRange = "All"
+                            persistMapFiltersOnly()
+                        },
+                        startDate.year,
+                        startDate.monthValue - 1,
+                        startDate.dayOfMonth
+                    ).show()
+                },
+                label = { Text("Start: ${startDate.format(prettyDateFormatter)}") },
+                modifier = Modifier.padding(end = 8.dp)
+            )
+            FilterChip(
+                selected = false,
+                onClick = {
+                    DatePickerDialog(
+                        context,
+                        { _, year, month, dayOfMonth ->
+                            val picked = LocalDate.of(year, month + 1, dayOfMonth)
+                            endDate = picked
+                            if (picked.isBefore(startDate)) {
+                                startDate = picked
+                            }
+                            selectedQuickRange = "All"
+                            persistMapFiltersOnly()
+                        },
+                        endDate.year,
+                        endDate.monthValue - 1,
+                        endDate.dayOfMonth
+                    ).show()
+                },
+                label = { Text("End: ${endDate.format(prettyDateFormatter)}") },
+                modifier = Modifier.padding(end = 8.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(16.dp))
         Button(
             onClick = {
                 val normalized = normalizeSpreadsheetIdInput(spreadsheetId)
-                // #region agent log
                 if (BuildConfig.DEBUG) {
                     AgentDebugLogger.log(
                         runId = "run2",
@@ -213,9 +398,7 @@ fun SettingsScreen(
                         )
                     )
                 }
-                // #endregion
                 if (normalized == null) {
-                    // #region agent log
                     if (BuildConfig.DEBUG) {
                         AgentDebugLogger.log(
                             runId = "run4",
@@ -228,10 +411,18 @@ fun SettingsScreen(
                             )
                         )
                     }
-                    // #endregion
                     status = "Could not save: paste a Google Sheets URL (contains /spreadsheets/d/...) or raw Sheet ID."
                 } else {
-                    onSaveConfig(normalized, selectedTabs)
+                    onUpdateConfig(
+                        AppConfig(
+                            spreadsheetId = normalized,
+                            selectedTabs = selectedTabs,
+                            mapBriefCommentFilter = selectedBriefComments,
+                            mapDateStartIso = startDate.toString(),
+                            mapDateEndIso = endDate.toString(),
+                            mapQuickRange = selectedQuickRange
+                        )
+                    )
                     lastAutoFilledSpreadsheetId = normalized
                     status = "Saved config"
                 }
@@ -243,7 +434,6 @@ fun SettingsScreen(
         Button(
             onClick = {
                 val normalized = normalizeSpreadsheetIdInput(spreadsheetId)
-                // #region agent log
                 if (BuildConfig.DEBUG) {
                     AgentDebugLogger.log(
                         runId = "run2",
@@ -257,9 +447,7 @@ fun SettingsScreen(
                         )
                     )
                 }
-                // #endregion
                 if (normalized == null) {
-                    // #region agent log
                     if (BuildConfig.DEBUG) {
                         AgentDebugLogger.log(
                             runId = "run4",
@@ -272,7 +460,6 @@ fun SettingsScreen(
                             )
                         )
                     }
-                    // #endregion
                     status = "Cannot validate URI from Drive picker. Paste a Google Sheets URL or raw Sheet ID."
                     return@Button
                 }

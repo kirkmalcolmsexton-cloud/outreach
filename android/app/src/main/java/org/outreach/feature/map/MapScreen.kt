@@ -1,6 +1,5 @@
 package org.outreach.feature.map
 
-import android.app.DatePickerDialog
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
@@ -12,15 +11,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Directions
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +55,10 @@ import org.outreach.core.model.SourceMetadata
 fun MapScreen(
     modifier: Modifier = Modifier,
     households: List<HouseholdRecord> = emptyList(),
+    visibleZipTabs: Set<String> = emptySet(),
+    mapBriefCommentFilter: Set<String> = emptySet(),
+    filterStartDate: LocalDate = LocalDate.now(),
+    filterEndDate: LocalDate = LocalDate.now(),
     selectedHouseholdId: String? = null,
     onHouseholdSelected: (HouseholdRecord) -> Unit = {}
 ) {
@@ -87,48 +89,24 @@ fun MapScreen(
             )
         )
     }
-    val allTabsLabel = "All"
-    val tabs = data.map { it.source.sheetName }.distinct()
-    val briefCommentOptions = remember(data) { data.map { it.briefComment }.distinct().sorted() }
-    val visitationDates = remember(data) {
-        data.mapNotNull { parseIsoDateOrNull(it.lastVisited) }
-    }
-    val earliestVisitationDate = remember(visitationDates) {
-        visitationDates.minOrNull() ?: LocalDate.now()
-    }
-    val quickRangeOptions = remember {
-        listOf(
-            "7D" to 7L,
-            "30D" to 30L,
-            "90D" to 90L,
-            "All" to null
+    var searchQuery by remember { mutableStateOf("") }
+    val configFiltered = remember(
+        data,
+        visibleZipTabs,
+        mapBriefCommentFilter,
+        filterStartDate,
+        filterEndDate
+    ) {
+        filterHouseholdsForMap(
+            data,
+            visibleZipTabs,
+            mapBriefCommentFilter,
+            filterStartDate,
+            filterEndDate
         )
     }
-    var viewMode by remember { mutableStateOf("map") }
-    var selectedTab by remember { mutableStateOf(allTabsLabel) }
-    var selectedBriefComments by remember { mutableStateOf(setOf<String>()) }
-    var startDate by remember { mutableStateOf(earliestVisitationDate) }
-    var endDate by remember { mutableStateOf(LocalDate.now()) }
-    var selectedQuickRange by remember { mutableStateOf("All") }
-    LaunchedEffect(tabs) {
-        val validTab = selectedTab == allTabsLabel || selectedTab in tabs
-        if (!validTab) {
-            selectedTab = allTabsLabel
-        }
-    }
-    LaunchedEffect(earliestVisitationDate) {
-        if (startDate.isBefore(earliestVisitationDate)) {
-            startDate = earliestVisitationDate
-        }
-    }
-    val filteredData = remember(data, selectedTab, selectedBriefComments, startDate, endDate) {
-        data.filter { household ->
-            val tabMatches = selectedTab == allTabsLabel || household.source.sheetName == selectedTab
-            val briefCommentMatches = selectedBriefComments.isEmpty() || household.briefComment in selectedBriefComments
-            val visitationDate = parseIsoDateOrNull(household.lastVisited)
-            val dateMatches = visitationDate == null || (!visitationDate.isBefore(startDate) && !visitationDate.isAfter(endDate))
-            tabMatches && briefCommentMatches && dateMatches
-        }
+    val filteredData = remember(configFiltered, searchQuery) {
+        configFiltered.filter { householdMatchesTextSearch(it, searchQuery) }
     }
     val mapMarkers = remember(filteredData) {
         filteredData.mapNotNull { household ->
@@ -145,6 +123,8 @@ fun MapScreen(
     val selectionZoom = 15f
     val haloFillColor = Color(0x403675F6)
     val haloStrokeColor = Color(0xFF6750A4)
+
+    var viewMode by remember { mutableStateOf("map") }
 
     LaunchedEffect(mapMarkers, selectedHouseholdId) {
         if (selectedHouseholdId != null) return@LaunchedEffect
@@ -193,107 +173,22 @@ fun MapScreen(
                 label = { Text("List") }
             )
         }
-        Text(if (viewMode == "map") "Map pins" else "Address list")
-        LazyRow {
-            items(listOf(allTabsLabel) + tabs) { tab ->
-                FilterChip(
-                    selected = selectedTab == tab,
-                    onClick = { selectedTab = tab },
-                    label = { Text(tab) },
-                    modifier = Modifier.padding(end = 8.dp)
-                )
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            singleLine = true,
+            label = { Text("Search name or address") }
+        )
+        Text(
+            if (viewMode == "map") {
+                "Map pins (filters: Configure)"
+            } else {
+                "Address list (filters: Configure)"
             }
-        }
-        LazyRow(modifier = Modifier.padding(top = 8.dp)) {
-            items(briefCommentOptions) { briefComment ->
-                val selected = briefComment in selectedBriefComments
-                FilterChip(
-                    selected = selected,
-                    onClick = {
-                        selectedBriefComments = if (selected) {
-                            selectedBriefComments - briefComment
-                        } else {
-                            selectedBriefComments + briefComment
-                        }
-                    },
-                    label = { Text(formatBriefComment(briefComment)) },
-                    modifier = Modifier.padding(end = 8.dp)
-                )
-            }
-        }
-        LazyRow(modifier = Modifier.padding(top = 8.dp)) {
-            items(quickRangeOptions) { (label, days) ->
-                val selected = selectedQuickRange == label
-                FilterChip(
-                    selected = selected,
-                    onClick = {
-                        selectedQuickRange = label
-                        if (days == null) {
-                            startDate = earliestVisitationDate
-                            endDate = LocalDate.now()
-                        } else {
-                            endDate = LocalDate.now()
-                            val rangeStart = endDate.minusDays(days)
-                            startDate = if (rangeStart.isBefore(earliestVisitationDate)) {
-                                earliestVisitationDate
-                            } else {
-                                rangeStart
-                            }
-                        }
-                    },
-                    label = { Text(label) },
-                    modifier = Modifier.padding(end = 8.dp)
-                )
-            }
-        }
-        LazyRow(modifier = Modifier.padding(top = 8.dp)) {
-            item {
-                FilterChip(
-                    selected = false,
-                    onClick = {
-                        DatePickerDialog(
-                            context,
-                            { _, year, month, dayOfMonth ->
-                                val picked = LocalDate.of(year, month + 1, dayOfMonth)
-                                startDate = picked
-                                if (picked.isAfter(endDate)) {
-                                    endDate = picked
-                                }
-                                selectedQuickRange = "All"
-                            },
-                            startDate.year,
-                            startDate.monthValue - 1,
-                            startDate.dayOfMonth
-                        ).show()
-                    },
-                    label = { Text("Start: ${startDate.format(prettyDateFormatter)}") },
-                    modifier = Modifier.padding(end = 8.dp)
-                )
-            }
-            item {
-                FilterChip(
-                    selected = false,
-                    onClick = {
-                        DatePickerDialog(
-                            context,
-                            { _, year, month, dayOfMonth ->
-                                val picked = LocalDate.of(year, month + 1, dayOfMonth)
-                                endDate = picked
-                                if (picked.isBefore(startDate)) {
-                                    startDate = picked
-                                }
-                                selectedQuickRange = "All"
-                            },
-                            endDate.year,
-                            endDate.monthValue - 1,
-                            endDate.dayOfMonth
-                        ).show()
-                    },
-                    label = { Text("End: ${endDate.format(prettyDateFormatter)}") },
-                    modifier = Modifier.padding(end = 8.dp)
-                )
-            }
-        }
+        )
         if (viewMode == "map") {
             if (!hasMapsApiMetadata) {
                 Text(
@@ -309,8 +204,10 @@ fun MapScreen(
             }
             if (filteredWithoutCoordinates > 0) {
                 Text(
-                    "${filteredWithoutCoordinates} filtered address(es) have no coordinates yet (geocoding may still be in progress or failed).",
-                    modifier = Modifier.padding(top = 4.dp)
+                    "$filteredWithoutCoordinates missing coords",
+                    modifier = Modifier.padding(top = 2.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             GoogleMap(
@@ -419,21 +316,6 @@ fun MapScreen(
             }
         }
     }
-}
-
-private fun parseIsoDateOrNull(value: String?): LocalDate? {
-    if (value.isNullOrBlank()) return null
-    return runCatching { LocalDate.parse(value, DateTimeFormatter.ISO_DATE) }.getOrNull()
-}
-
-private fun formatBriefComment(value: String): String {
-    return value
-        .replace("_", " ")
-        .split(" ")
-        .filter { it.isNotBlank() }
-        .joinToString(" ") { token ->
-            token.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
-        }
 }
 
 /** Hue (0–360) per canonical [VisitOutcome] key; unknown/raw [briefComment] uses [OTHER_BRIEF_COMMENT_MARKER_HUE]. */

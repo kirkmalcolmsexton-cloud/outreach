@@ -116,11 +116,23 @@ class AppConfigStore(context: Context) {
     )
     private val spreadsheetKey = stringPreferencesKey("spreadsheet_id")
     private val tabsKey = stringPreferencesKey("selected_tabs")
+    private val mapBriefFilterKey = stringPreferencesKey("map_brief_filter")
+    private val mapDateStartKey = stringPreferencesKey("map_date_start_iso")
+    private val mapDateEndKey = stringPreferencesKey("map_date_end_iso")
+    private val mapQuickRangeKey = stringPreferencesKey("map_quick_range")
 
     val config: Flow<AppConfig> = dataStore.data.map { prefs ->
         AppConfig(
             spreadsheetId = prefs[spreadsheetKey].orEmpty(),
-            selectedTabs = prefs[tabsKey].orEmpty().split(",").filter { it.isNotBlank() }.toSet()
+            selectedTabs = prefs[tabsKey].orEmpty().split(",").filter { it.isNotBlank() }.toSet(),
+            mapBriefCommentFilter = prefs[mapBriefFilterKey].orEmpty()
+                .split(",")
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .toSet(),
+            mapDateStartIso = prefs[mapDateStartKey].takeUnless { it.isNullOrBlank() },
+            mapDateEndIso = prefs[mapDateEndKey].takeUnless { it.isNullOrBlank() },
+            mapQuickRange = prefs[mapQuickRangeKey].orEmpty().ifBlank { "All" }
         )
     }
 
@@ -128,6 +140,10 @@ class AppConfigStore(context: Context) {
         dataStore.edit { prefs ->
             prefs[spreadsheetKey] = config.spreadsheetId
             prefs[tabsKey] = config.selectedTabs.joinToString(",")
+            prefs[mapBriefFilterKey] = config.mapBriefCommentFilter.joinToString(",")
+            prefs[mapDateStartKey] = config.mapDateStartIso.orEmpty()
+            prefs[mapDateEndKey] = config.mapDateEndIso.orEmpty()
+            prefs[mapQuickRangeKey] = config.mapQuickRange
         }
     }
 }

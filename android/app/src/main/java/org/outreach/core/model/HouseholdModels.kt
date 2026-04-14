@@ -50,7 +50,14 @@ data class SpreadsheetRowInput(
 
 data class AppConfig(
     val spreadsheetId: String = "",
-    val selectedTabs: Set<String> = emptySet()
+    /** ZIP tab names to sync from the sheet and show on the map (multi-select). */
+    val selectedTabs: Set<String> = emptySet(),
+    val mapBriefCommentFilter: Set<String> = emptySet(),
+    /** When null, the map uses the earliest last-visited date from loaded data. */
+    val mapDateStartIso: String? = null,
+    /** When null, the map uses today. */
+    val mapDateEndIso: String? = null,
+    val mapQuickRange: String = "All"
 )
 
 data class VisitUpdate(

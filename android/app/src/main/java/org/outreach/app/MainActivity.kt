@@ -37,8 +37,10 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import com.google.firebase.auth.FirebaseAuth
 import org.outreach.app.BuildConfig
 import org.outreach.core.model.CollaborationEvent
@@ -48,6 +50,7 @@ import org.outreach.core.data.SyncWorker
 import org.outreach.core.model.AppConfig
 import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.VisitUpdate
+import org.outreach.feature.map.parseIsoDateOrNull
 import org.outreach.feature.auth.LoginGateScreen
 import org.outreach.feature.collab.CollaborationScreen
 import org.outreach.feature.map.MapScreen
@@ -107,8 +110,8 @@ private fun OutreachRoot() {
     val households by (OutreachServiceLocator.repository?.households
         ?: flowOf(emptyList())).collectAsState(initial = emptyList())
     val savedConfig by (OutreachServiceLocator.repository?.config
-        ?: flowOf(AppConfig(spreadsheetId = "", selectedTabs = emptySet())))
-        .collectAsState(initial = AppConfig(spreadsheetId = "", selectedTabs = emptySet()))
+        ?: flowOf(AppConfig()))
+        .collectAsState(initial = AppConfig())
     var selectedHouseholdId by remember { mutableStateOf<String?>(null) }
     val selectedHousehold: HouseholdRecord? =
         remember(households, selectedHouseholdId) {
@@ -121,6 +124,23 @@ private fun OutreachRoot() {
         presetsLoading = true
         briefCommentPresets = runCatching { repository.loadBriefCommentPresets() }.getOrDefault(emptyList())
         presetsLoading = false
+    }
+    val briefCommentOptions = remember(households) {
+        households.map { it.briefComment }.distinct().sorted()
+    }
+    val visitationDates = remember(households) {
+        households.mapNotNull { parseIsoDateOrNull(it.lastVisited) }
+    }
+    val earliestVisitationDate = remember(visitationDates) {
+        visitationDates.minOrNull() ?: LocalDate.now()
+    }
+    val filterStartDate = remember(savedConfig.mapDateStartIso, earliestVisitationDate) {
+        val fromConfig = savedConfig.mapDateStartIso?.let { LocalDate.parse(it) }
+        maxOf(fromConfig ?: earliestVisitationDate, earliestVisitationDate)
+    }
+    val filterEndDate = remember(savedConfig.mapDateEndIso, filterStartDate) {
+        val fromConfig = savedConfig.mapDateEndIso?.let { LocalDate.parse(it) }
+        maxOf(fromConfig ?: LocalDate.now(), filterStartDate)
     }
     val documentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -263,38 +283,34 @@ private fun OutreachRoot() {
             "home" -> MapScreen(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
                 households = households,
+                visibleZipTabs = savedConfig.selectedTabs,
+                mapBriefCommentFilter = savedConfig.mapBriefCommentFilter,
+                filterStartDate = filterStartDate,
+                filterEndDate = filterEndDate,
                 selectedHouseholdId = selectedHouseholdId,
                 onHouseholdSelected = { selectedHouseholdId = it.id }
             )
             "settings" -> SettingsScreen(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
                 pickedSpreadsheetId = pickedSpreadsheetId,
-                savedSpreadsheetId = savedConfig.spreadsheetId,
-                savedTabs = savedConfig.selectedTabs,
-                onSaveConfig = { spreadsheetId, tabs ->
-                    val normalizedSpreadsheetId = normalizeSpreadsheetIdInput(spreadsheetId)
-                    // #region agent log
-                    if (BuildConfig.DEBUG) {
-                        AgentDebugLogger.log(
-                            runId = "run1",
-                            hypothesisId = "H2",
-                            location = "MainActivity.kt:onSaveConfig",
-                            message = "Saving sheet config from settings",
-                            data = mapOf(
-                                "rawInputPrefix" to spreadsheetId.take(32),
-                                "rawInputLength" to spreadsheetId.length,
-                                "normalizedSuffix" to (normalizedSpreadsheetId?.takeLast(8) ?: "null"),
-                                "normalizedLength" to (normalizedSpreadsheetId?.length ?: 0),
-                                "tabsCount" to tabs.size
-                            )
-                        )
-                    }
-                    // #endregion
+                savedConfig = savedConfig,
+                briefCommentOptions = briefCommentOptions,
+                earliestVisitationDate = earliestVisitationDate,
+                onUpdateConfig = { config ->
                     val repository = OutreachServiceLocator.repository
-                    if (repository != null && normalizedSpreadsheetId != null) {
+                    if (repository != null) {
                         coroutineScope.launch {
-                            repository.setConfig(AppConfig(spreadsheetId = normalizedSpreadsheetId, selectedTabs = tabs))
-                            repository.syncFromSheet()
+                            val before = repository.config.first()
+                            repository.setConfig(config)
+                            val sheetOrTabsChanged =
+                                config.spreadsheetId != before.spreadsheetId ||
+                                    config.selectedTabs != before.selectedTabs
+                            if (sheetOrTabsChanged &&
+                                config.spreadsheetId.isNotBlank() &&
+                                config.selectedTabs.isNotEmpty()
+                            ) {
+                                repository.syncFromSheet()
+                            }
                         }
                     }
                 },
@@ -421,6 +437,10 @@ private fun OutreachRoot() {
             else -> MapScreen(
                 Modifier.padding(innerPadding),
                 households = households,
+                visibleZipTabs = savedConfig.selectedTabs,
+                mapBriefCommentFilter = savedConfig.mapBriefCommentFilter,
+                filterStartDate = filterStartDate,
+                filterEndDate = filterEndDate,
                 selectedHouseholdId = selectedHouseholdId,
                 onHouseholdSelected = { selectedHouseholdId = it.id }
             )
