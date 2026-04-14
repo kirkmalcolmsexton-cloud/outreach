@@ -3,9 +3,6 @@ package org.outreach.feature.map
 import android.app.DatePickerDialog
 import android.content.Intent
 import android.net.Uri
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.drawable.Drawable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -22,6 +19,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,7 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
@@ -46,9 +43,6 @@ import java.time.format.DateTimeFormatter
 import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.RawHouseholdRow
 import org.outreach.core.model.SourceMetadata
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.roundToInt
 
 @Composable
 fun MapScreen(
@@ -99,17 +93,6 @@ fun MapScreen(
             "All" to null
         )
     }
-    val markerIconMap = remember(context) {
-        mapOf(
-            "left_message" to markerIconFor(context, android.R.drawable.ic_dialog_email),
-            "not_home" to markerIconFor(context, android.R.drawable.ic_menu_mylocation),
-            "receptive" to markerIconFor(context, android.R.drawable.checkbox_on_background),
-            "do_not_visit" to markerIconFor(context, android.R.drawable.ic_delete),
-            "moved" to markerIconFor(context, android.R.drawable.ic_menu_directions),
-            "dawat_saath" to markerIconFor(context, android.R.drawable.star_big_on),
-            "other" to markerIconFor(context, android.R.drawable.ic_menu_help)
-        )
-    }
     var viewMode by remember { mutableStateOf("map") }
     var selectedTab by remember { mutableStateOf(allTabsLabel) }
     var selectedBriefComments by remember { mutableStateOf(setOf<String>()) }
@@ -142,6 +125,9 @@ fun MapScreen(
             val lng = household.longitude
             if (lat == null || lng == null) null else household to LatLng(lat, lng)
         }
+    }
+    val filteredWithoutCoordinates = remember(filteredData) {
+        filteredData.count { it.latitude == null || it.longitude == null }
     }
     val defaultCenter = LatLng(41.8781, -87.6298)
     val cameraPositionState = rememberCameraPositionState()
@@ -295,6 +281,12 @@ fun MapScreen(
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
+            if (filteredWithoutCoordinates > 0) {
+                Text(
+                    "${filteredWithoutCoordinates} filtered address(es) have no coordinates yet (geocoding may still be in progress or failed).",
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
             GoogleMap(
                 modifier = Modifier
                     .padding(top = 12.dp)
@@ -305,17 +297,16 @@ fun MapScreen(
                 cameraPositionState = cameraPositionState
             ) {
                 mapMarkers.forEach { (household, position) ->
-                    val markerIcon = if (selectedBriefComments.isNotEmpty() && household.briefComment in selectedBriefComments) {
-                        markerIconMap[household.briefComment]
-                    } else {
-                        null
+                    key(household.id) {
+                        val markerState = remember { MarkerState(position = position) }
+                            .apply { this.position = position }
+                        Marker(
+                            state = markerState,
+                            title = household.name,
+                            snippet = household.streetAddress,
+                            icon = markerDescriptorForBriefComment(household.briefComment)
+                        )
                     }
-                    Marker(
-                        state = MarkerState(position = position),
-                        title = household.name,
-                        snippet = household.streetAddress,
-                        icon = markerIcon
-                    )
                 }
             }
         } else {
@@ -367,24 +358,20 @@ private fun formatBriefComment(value: String): String {
         }
 }
 
-private fun markerIconFor(context: android.content.Context, drawableRes: Int): BitmapDescriptor? {
-    return try {
-        val drawable = ContextCompat.getDrawable(context, drawableRes) ?: return null
-        BitmapDescriptorFactory.fromBitmap(drawable.toBitmapForMarker())
-    } catch (_: Throwable) {
-        null
-    }
-}
+/** Hue (0–360) per canonical [VisitOutcome] key; unknown/raw [briefComment] uses [OTHER_BRIEF_COMMENT_MARKER_HUE]. */
+private val briefCommentMarkerHue = mapOf(
+    "left_message" to 210f,
+    "not_home" to 30f,
+    "receptive" to 120f,
+    "do_not_visit" to 0f,
+    "moved" to 280f,
+    "dawat_saath" to 55f,
+    "other" to 200f
+)
 
-private fun Drawable.toBitmapForMarker(maxSide: Int = 128): Bitmap {
-    val srcW = if (intrinsicWidth > 0) intrinsicWidth else 64
-    val srcH = if (intrinsicHeight > 0) intrinsicHeight else 64
-    val scale = min(min(maxSide.toFloat() / srcW, maxSide.toFloat() / srcH), 1f)
-    val width = max(1, (srcW * scale).roundToInt())
-    val height = max(1, (srcH * scale).roundToInt())
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    setBounds(0, 0, canvas.width, canvas.height)
-    draw(canvas)
-    return bitmap
+private const val OTHER_BRIEF_COMMENT_MARKER_HUE = 200f
+
+private fun markerDescriptorForBriefComment(briefComment: String): BitmapDescriptor {
+    val hue = briefCommentMarkerHue[briefComment] ?: OTHER_BRIEF_COMMENT_MARKER_HUE
+    return BitmapDescriptorFactory.defaultMarker(hue)
 }
