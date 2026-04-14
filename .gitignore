@@ -1,0 +1,21 @@
+# Google OAuth client downloads (contain secrets; keep local only)
+**/client_secret*.json
+
+# Real Firebase config must stay local; commit only the example template.
+android/app/google-services.json
+
+# Local env/config files (keep secrets out of git)
+.env
+.env.*
+*.local
+local.properties
+
+# Android signing and keystore artifacts
+*.jks
+*.keystore
+*.p12
+*.pem
+
+# Local IDE/system artifacts
+.DS_Store
+.idea/
