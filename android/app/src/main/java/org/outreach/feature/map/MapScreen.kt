@@ -29,8 +29,6 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -99,7 +97,9 @@ fun MapScreen(
     onHouseholdSelected: (HouseholdRecord) -> Unit = {},
     selectedTabs: Set<String> = emptySet(),
     onAddHousehold: (tabName: String, name: String, streetAddress: String, neighborhood: String) -> Unit =
-        { _, _, _, _ -> }
+        { _, _, _, _ -> },
+    viewMode: String,
+    onViewModeChange: (String) -> Unit
 ) {
     var showAddPersonDialog by remember { mutableStateOf(false) }
     val prettyDateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
@@ -176,7 +176,6 @@ fun MapScreen(
     val haloFillColor = Color(0x403675F6)
     val haloStrokeColor = Color(0xFF6750A4)
 
-    var viewMode by remember { mutableStateOf("map") }
     val scope = rememberCoroutineScope()
     val mapsApiKey = remember(context) {
         runCatching { context.getString(R.string.google_maps_key) }.getOrDefault("")
@@ -383,30 +382,6 @@ fun MapScreen(
             .padding(12.dp)
             .padding(end = 10.dp)
     ) {
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.padding(bottom = 8.dp)) {
-            SegmentedButton(
-                selected = viewMode == "map",
-                onClick = {
-                    viewMode = "map"
-                },
-                shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(
-                    index = 0,
-                    count = 2
-                ),
-                label = { Text("Map") }
-            )
-            SegmentedButton(
-                selected = viewMode == "list",
-                onClick = {
-                    viewMode = "list"
-                },
-                shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(
-                    index = 1,
-                    count = 2
-                ),
-                label = { Text("List") }
-            )
-        }
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -604,7 +579,7 @@ fun MapScreen(
                             IconButton(
                                 onClick = {
                                     onHouseholdSelected(household)
-                                    viewMode = "map"
+                                    onViewModeChange("map")
                                     requestRouteForHousehold(household, false)
                                 }
                             ) {

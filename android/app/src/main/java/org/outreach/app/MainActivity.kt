@@ -8,19 +8,22 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -40,8 +43,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.time.LocalDate
-import com.google.firebase.auth.FirebaseAuth
-import org.outreach.core.model.CollaborationEvent
 import org.outreach.core.data.OutreachServiceLocator
 import org.outreach.core.data.SyncWorker
 import org.outreach.core.model.AppConfig
@@ -49,7 +50,6 @@ import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.VisitUpdate
 import org.outreach.feature.map.parseIsoDateOrNull
 import org.outreach.feature.auth.LoginGateScreen
-import org.outreach.feature.collab.CollaborationScreen
 import org.outreach.feature.map.MapViewportState
 import org.outreach.feature.map.MapScreen
 import org.outreach.feature.settings.SettingsScreen
@@ -89,6 +89,7 @@ private fun OutreachRoot() {
     val coroutineScope = rememberCoroutineScope()
     var loggedIn by remember { mutableStateOf(false) }
     var screen by remember { mutableStateOf("home") }
+    var mapViewMode by remember { mutableStateOf("map") }
     var pickedSpreadsheetId by remember { mutableStateOf<String?>(null) }
     var mapViewportState by remember { mutableStateOf<MapViewportState?>(null) }
     val households by (OutreachServiceLocator.repository?.households
@@ -140,7 +141,7 @@ private fun OutreachRoot() {
             pickedSpreadsheetId = uri?.toString()
         }
     }
-    val destinations = listOf("home", "visits", "collab")
+    val destinations = listOf("home", "visits", "settings")
     if (!loggedIn) {
         LoginGateScreen(onSignedIn = {
             loggedIn = true
@@ -157,11 +158,21 @@ private fun OutreachRoot() {
                     }
                 },
                 actions = {
-                    IconButton(onClick = { screen = "visits" }) {
-                        Icon(Icons.Default.List, contentDescription = "Zip code filter")
-                    }
-                    IconButton(onClick = { screen = "settings" }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    if (screen == "home") {
+                        SingleChoiceSegmentedButtonRow {
+                            SegmentedButton(
+                                selected = mapViewMode == "map",
+                                onClick = { mapViewMode = "map" },
+                                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                                label = { Text("Map") }
+                            )
+                            SegmentedButton(
+                                selected = mapViewMode == "list",
+                                onClick = { mapViewMode = "list" },
+                                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                                label = { Text("List") }
+                            )
+                        }
                     }
                 }
             )
@@ -172,8 +183,29 @@ private fun OutreachRoot() {
                     NavigationBarItem(
                         selected = screen == destination,
                         onClick = { screen = destination },
-                        icon = { Icon(Icons.Default.Home, null) },
-                        label = { Text(destination) }
+                        icon = {
+                            Icon(
+                                when (destination) {
+                                    "home" -> Icons.Default.Home
+                                    "visits" -> Icons.AutoMirrored.Filled.List
+                                    else -> Icons.Default.Settings
+                                },
+                                contentDescription = when (destination) {
+                                    "home" -> "Home"
+                                    "visits" -> "Visits"
+                                    else -> "Settings"
+                                }
+                            )
+                        },
+                        label = {
+                            Text(
+                                when (destination) {
+                                    "home" -> "Home"
+                                    "visits" -> "Visits"
+                                    else -> "Settings"
+                                }
+                            )
+                        }
                     )
                 }
             }
@@ -205,7 +237,9 @@ private fun OutreachRoot() {
                         repository.flushPendingSync()
                         selectedHouseholdId = id
                     }
-                }
+                },
+                viewMode = mapViewMode,
+                onViewModeChange = { mapViewMode = it }
             )
             "settings" -> SettingsScreen(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
@@ -295,27 +329,6 @@ private fun OutreachRoot() {
                     }
                 }
             )
-            "collab" -> CollaborationScreen(
-                modifier = Modifier.padding(innerPadding),
-                onPublishPresence = {
-                    val collab = OutreachServiceLocator.collaborationRepository
-                    val userId = FirebaseAuth.getInstance().currentUser?.uid
-                    if (userId != null) {
-                        coroutineScope.launch {
-                            collab?.publishPresence(userId, "active")
-                            collab?.publishActivity(
-                                CollaborationEvent(
-                                    userId = userId,
-                                    householdId = null,
-                                    tabName = "active",
-                                    type = "presence_update",
-                                    epochMillis = System.currentTimeMillis()
-                                )
-                            )
-                        }
-                    }
-                }
-            )
             else -> MapScreen(
                 Modifier.padding(innerPadding),
                 households = households,
@@ -336,7 +349,9 @@ private fun OutreachRoot() {
                         repository.flushPendingSync()
                         selectedHouseholdId = id
                     }
-                }
+                },
+                viewMode = mapViewMode,
+                onViewModeChange = { mapViewMode = it }
             )
         }
     }
