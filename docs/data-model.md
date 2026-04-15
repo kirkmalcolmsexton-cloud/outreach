@@ -4,12 +4,18 @@ This model is derived from the spreadsheet tab shown in the provided screenshot.
 
 ## Spreadsheet Columns
 
-- `Brief Comments`
-- `Last Visited`
+- `Brief Comments` (or `Brief Comment`)
+- `Last Visited` (or `Last Visit`)
 - `Name`
 - `Street Address`
 - `Neighborhood`
 - `Notes`
+
+## Optional `keys` tab (brief-comment presets)
+
+- Add a sheet tab named **`keys`** (lowercase) to drive the Android visit screen’s **brief-comment dropdown**.
+- Row 1 is a header row. The app reads **only** the **`Name`** column: each non-empty data cell in that column is one allowed label (same header canonicalization as zip tabs).
+- The app **never writes** to `keys`. Choosing **Custom** in the app only updates **`Brief Comments`** (or `Brief Comment`) on the household’s row.
 
 ## Domain Model
 
@@ -44,8 +50,8 @@ Rows that do not match known patterns are retained as original text in `briefCom
 
 | Spreadsheet Column | Model Field | Rule |
 | --- | --- | --- |
-| Brief Comments | `briefComment` | Normalize variants to enum (`Not home`, `left message`, `Do not visit`, etc.); fallback to original text |
-| Last Visited | `lastVisited` | Parse `M/D/YY` or `M/D/YYYY` to ISO date; values without a year become `null` |
+| Brief Comments / Brief Comment | `briefComment` | Normalize variants to enum (`Not home`, `left message`, `Do not visit`, etc.); fallback to original text |
+| Last Visited / Last Visit | `lastVisited` | Parse `M/D/YY` or `M/D/YYYY` to ISO date; values without a year become `null` |
 | Name | `name` | Trim whitespace |
 | Street Address | `streetAddress` | Trim whitespace and preserve source formatting |
 | Neighborhood | `neighborhood` | Trim whitespace |

@@ -9,6 +9,7 @@ android/app/google-services.json
 .env.*
 *.local
 local.properties
+android/gradle.properties
 
 # Android signing and keystore artifacts
 *.jks
