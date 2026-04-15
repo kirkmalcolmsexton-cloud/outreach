@@ -42,9 +42,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import com.google.firebase.auth.FirebaseAuth
-import org.outreach.app.BuildConfig
 import org.outreach.core.model.CollaborationEvent
-import org.outreach.core.debug.AgentDebugLogger
 import org.outreach.core.data.OutreachServiceLocator
 import org.outreach.core.data.SyncWorker
 import org.outreach.core.model.AppConfig
@@ -53,6 +51,7 @@ import org.outreach.core.model.VisitUpdate
 import org.outreach.feature.map.parseIsoDateOrNull
 import org.outreach.feature.auth.LoginGateScreen
 import org.outreach.feature.collab.CollaborationScreen
+import org.outreach.feature.map.MapViewportState
 import org.outreach.feature.map.MapScreen
 import org.outreach.feature.settings.SettingsScreen
 import org.outreach.feature.visits.VisitLogScreen
@@ -61,20 +60,6 @@ import java.util.concurrent.TimeUnit
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // #region agent log
-        if (BuildConfig.DEBUG) {
-            AgentDebugLogger.log(
-                runId = "run5",
-                hypothesisId = "H17",
-                location = "MainActivity.kt:onCreate",
-                message = "App started with latest debug instrumentation",
-                data = mapOf(
-                    "buildType" to BuildConfig.BUILD_TYPE,
-                    "versionName" to BuildConfig.VERSION_NAME
-                )
-            )
-        }
-        // #endregion
         scheduleBackgroundSync()
         setContent {
             MaterialTheme {
@@ -107,6 +92,7 @@ private fun OutreachRoot() {
     var loggedIn by remember { mutableStateOf(false) }
     var screen by remember { mutableStateOf("home") }
     var pickedSpreadsheetId by remember { mutableStateOf<String?>(null) }
+    var mapViewportState by remember { mutableStateOf<MapViewportState?>(null) }
     val households by (OutreachServiceLocator.repository?.households
         ?: flowOf(emptyList())).collectAsState(initial = emptyList())
     val savedConfig by (OutreachServiceLocator.repository?.config
@@ -149,102 +135,17 @@ private fun OutreachRoot() {
     val documentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        inspectDriveSelection(uri, context)
         val extracted = extractSpreadsheetIdFromUri(uri)
-        // #region agent log
-        if (BuildConfig.DEBUG) {
-            AgentDebugLogger.log(
-                runId = "sheet-debug",
-                hypothesisId = "S8",
-                location = "MainActivity.kt:documentLauncher",
-                message = "Sheet picker returned URI",
-                data = mapOf(
-                    "hasUri" to (uri != null),
-                    "uriPrefix" to (uri?.toString()?.take(80) ?: ""),
-                    "extractedIdSuffix" to (extracted?.takeLast(6) ?: "")
-                )
-            )
-        }
-        // #endregion
         if (extracted != null) {
             pickedSpreadsheetId = extracted
         } else {
             pickedSpreadsheetId = uri?.toString()
-            // #region agent log
-            if (BuildConfig.DEBUG) {
-                AgentDebugLogger.log(
-                    runId = "run1",
-                    hypothesisId = "H6",
-                    location = "MainActivity.kt:documentLauncher",
-                    message = "Drive picker URI did not contain spreadsheet id",
-                    data = mapOf(
-                        "uriPrefix" to (uri?.toString()?.take(80) ?: "")
-                    )
-                )
-            }
-            // #endregion
         }
     }
     val destinations = listOf("home", "visits", "collab")
-    // #region agent log
-    if (BuildConfig.DEBUG) {
-        AgentDebugLogger.log(
-            runId = "pre-fix",
-            hypothesisId = "H2",
-            location = "MainActivity.kt:OutreachRoot",
-            message = "OutreachRoot composed",
-            data = mapOf(
-                "loggedInState" to loggedIn,
-                "hasCurrentUserAtCompose" to (FirebaseAuth.getInstance().currentUser != null),
-                "screen" to screen
-            )
-        )
-    }
-    // #endregion
     if (!loggedIn) {
-        // #region agent log
-        if (BuildConfig.DEBUG) {
-            AgentDebugLogger.log(
-                runId = "pre-fix",
-                hypothesisId = "H3",
-                location = "MainActivity.kt:loginGateBranch",
-                message = "Rendering LoginGateScreen branch",
-                data = mapOf(
-                    "loggedInState" to loggedIn,
-                    "hasCurrentUserWhenBlocked" to (FirebaseAuth.getInstance().currentUser != null)
-                )
-            )
-        }
-        // #endregion
         LoginGateScreen(onSignedIn = {
-            // #region agent log
-            if (BuildConfig.DEBUG) {
-                AgentDebugLogger.log(
-                    runId = "sheet-debug",
-                    hypothesisId = "S6",
-                    location = "MainActivity.kt:onSignedInCallback",
-                    message = "LoginGateScreen onSignedIn callback invoked",
-                    data = mapOf(
-                        "loggedInBefore" to loggedIn,
-                        "hasCurrentUser" to (FirebaseAuth.getInstance().currentUser != null)
-                    )
-                )
-            }
-            // #endregion
             loggedIn = true
-            // #region agent log
-            if (BuildConfig.DEBUG) {
-                AgentDebugLogger.log(
-                    runId = "sheet-debug",
-                    hypothesisId = "S6",
-                    location = "MainActivity.kt:onSignedInCallback",
-                    message = "MainActivity set loggedIn=true",
-                    data = mapOf(
-                        "loggedInAfter" to loggedIn
-                    )
-                )
-            }
-            // #endregion
         })
         return
     }
@@ -293,6 +194,8 @@ private fun OutreachRoot() {
                 mapBriefCommentFilter = savedConfig.mapBriefCommentFilter,
                 filterStartDate = filterStartDate,
                 filterEndDate = filterEndDate,
+                initialViewportState = mapViewportState,
+                onViewportStateChanged = { mapViewportState = it },
                 selectedHouseholdId = selectedHouseholdId,
                 onHouseholdSelected = onHouseholdSelected,
                 selectedTabs = savedConfig.selectedTabs,
@@ -317,41 +220,10 @@ private fun OutreachRoot() {
                     if (repository != null) {
                         coroutineScope.launch {
                             val before = repository.config.first()
-                            // #region agent log
-                            if (BuildConfig.DEBUG) {
-                                AgentDebugLogger.log(
-                                    runId = "sheet-switch",
-                                    hypothesisId = "SS1",
-                                    location = "MainActivity.kt:onUpdateConfig.beforeSet",
-                                    message = "Applying updated config from settings",
-                                    data = mapOf(
-                                        "beforeSheetSuffix" to before.spreadsheetId.takeLast(6),
-                                        "afterSheetSuffix" to config.spreadsheetId.takeLast(6),
-                                        "beforeTabsCount" to before.selectedTabs.size,
-                                        "afterTabsCount" to config.selectedTabs.size
-                                    )
-                                )
-                            }
-                            // #endregion
                             repository.setConfig(config)
                             val sheetOrTabsChanged =
                                 config.spreadsheetId != before.spreadsheetId ||
                                     config.selectedTabs != before.selectedTabs
-                            // #region agent log
-                            if (BuildConfig.DEBUG) {
-                                AgentDebugLogger.log(
-                                    runId = "sheet-switch",
-                                    hypothesisId = "SS5",
-                                    location = "MainActivity.kt:onUpdateConfig.afterSet",
-                                    message = "Decided whether to auto-sync after config change",
-                                    data = mapOf(
-                                        "sheetOrTabsChanged" to sheetOrTabsChanged,
-                                        "sheetNonBlank" to config.spreadsheetId.isNotBlank(),
-                                        "tabsNonEmpty" to config.selectedTabs.isNotEmpty()
-                                    )
-                                )
-                            }
-                            // #endregion
                             if (sheetOrTabsChanged &&
                                 config.spreadsheetId.isNotBlank() &&
                                 config.selectedTabs.isNotEmpty()
@@ -366,52 +238,10 @@ private fun OutreachRoot() {
                     val repository = OutreachServiceLocator.repository
                     if (repository != null && normalizedSpreadsheetId != null) {
                         coroutineScope.launch {
-                            // #region agent log
-                            if (BuildConfig.DEBUG) {
-                                AgentDebugLogger.log(
-                                    runId = "sheet-debug",
-                                    hypothesisId = "S1",
-                                    location = "MainActivity.kt:onValidateSchema",
-                                    message = "Validate schema tapped",
-                                    data = mapOf(
-                                        "spreadsheetIdSuffix" to normalizedSpreadsheetId.takeLast(6),
-                                        "tabsCount" to tabs.size,
-                                        "tabs" to tabs.toList()
-                                    )
-                                )
-                            }
-                            // #endregion
                             val valid = repository.isSheetSchemaValid(normalizedSpreadsheetId, tabs)
-                            // #region agent log
-                            if (BuildConfig.DEBUG) {
-                                AgentDebugLogger.log(
-                                    runId = "sheet-debug",
-                                    hypothesisId = "S5",
-                                    location = "MainActivity.kt:onValidateSchema",
-                                    message = "Validate schema completed",
-                                    data = mapOf(
-                                        "isValid" to valid
-                                    )
-                                )
-                            }
-                            // #endregion
                             onResult(valid)
                         }
                     } else {
-                        // #region agent log
-                        if (BuildConfig.DEBUG && normalizedSpreadsheetId == null) {
-                            AgentDebugLogger.log(
-                                runId = "sheet-debug",
-                                hypothesisId = "S7",
-                                location = "MainActivity.kt:onValidateSchema",
-                                message = "Rejected invalid spreadsheet id format",
-                                data = mapOf(
-                                    "rawSuffix" to spreadsheetId.takeLast(12),
-                                    "tabsCount" to tabs.size
-                                )
-                            )
-                        }
-                        // #endregion
                         onResult(false)
                     }
                 },
@@ -495,6 +325,8 @@ private fun OutreachRoot() {
                 mapBriefCommentFilter = savedConfig.mapBriefCommentFilter,
                 filterStartDate = filterStartDate,
                 filterEndDate = filterEndDate,
+                initialViewportState = mapViewportState,
+                onViewportStateChanged = { mapViewportState = it },
                 selectedHouseholdId = selectedHouseholdId,
                 onHouseholdSelected = onHouseholdSelected,
                 selectedTabs = savedConfig.selectedTabs,
@@ -510,44 +342,6 @@ private fun OutreachRoot() {
             )
         }
     }
-}
-
-private fun inspectDriveSelection(uri: Uri?, context: android.content.Context) {
-    if (!BuildConfig.DEBUG || uri == null) return
-    val candidateColumns = listOf(
-        "_display_name",
-        "_size",
-        "document_id",
-        "resource_id",
-        "drive_resource_id",
-        "mime_type",
-        "flags"
-    )
-    val metadata = linkedMapOf<String, String>()
-    runCatching {
-        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                candidateColumns.forEach { name ->
-                    val idx = cursor.getColumnIndex(name)
-                    if (idx >= 0) {
-                        metadata[name] = runCatching { cursor.getString(idx) ?: "" }.getOrDefault("")
-                    }
-                }
-            }
-        }
-    }
-    // #region agent log
-    AgentDebugLogger.log(
-        runId = "run7",
-        hypothesisId = "H20",
-        location = "MainActivity.kt:inspectDriveSelection",
-        message = "Captured Drive picker metadata fields",
-        data = mapOf(
-            "uriPrefix" to uri.toString().take(120),
-            "metadata" to metadata.toString()
-        )
-    )
-    // #endregion
 }
 
 private fun extractSpreadsheetIdFromUri(uri: Uri?): String? {

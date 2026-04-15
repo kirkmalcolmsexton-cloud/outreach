@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.net.Uri
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -15,20 +14,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Directions
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.IconButton
@@ -46,17 +41,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.IntOffset
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLngBounds
 import com.google.maps.android.compose.Circle
 import com.google.android.gms.maps.model.BitmapDescriptor
@@ -71,6 +66,7 @@ import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -80,10 +76,14 @@ import java.time.format.DateTimeFormatter
 import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.RawHouseholdRow
 import org.outreach.core.model.SourceMetadata
-import org.json.JSONObject
-import java.io.OutputStreamWriter
-import java.net.HttpURLConnection
-import java.net.URL
+
+data class MapViewportState(
+    val latitude: Double,
+    val longitude: Double,
+    val zoom: Float,
+    val tilt: Float,
+    val bearing: Float
+)
 
 @Composable
 fun MapScreen(
@@ -93,6 +93,8 @@ fun MapScreen(
     mapBriefCommentFilter: Set<String> = emptySet(),
     filterStartDate: LocalDate = LocalDate.now(),
     filterEndDate: LocalDate = LocalDate.now(),
+    initialViewportState: MapViewportState? = null,
+    onViewportStateChanged: (MapViewportState) -> Unit = {},
     selectedHouseholdId: String? = null,
     onHouseholdSelected: (HouseholdRecord) -> Unit = {},
     selectedTabs: Set<String> = emptySet(),
@@ -157,11 +159,22 @@ fun MapScreen(
         filteredData.count { it.latitude == null || it.longitude == null }
     }
     val defaultCenter = LatLng(41.8781, -87.6298)
-    val cameraPositionState = rememberCameraPositionState()
+    val cameraPositionState = rememberCameraPositionState {
+        val saved = initialViewportState
+        position = if (saved != null) {
+            CameraPosition(
+                LatLng(saved.latitude, saved.longitude),
+                saved.zoom,
+                saved.tilt,
+                saved.bearing
+            )
+        } else {
+            CameraPosition.fromLatLngZoom(defaultCenter, 10f)
+        }
+    }
     val selectionZoom = 15f
     val haloFillColor = Color(0x403675F6)
     val haloStrokeColor = Color(0xFF6750A4)
-    val pageScrollState = rememberScrollState()
 
     var viewMode by remember { mutableStateOf("map") }
     val scope = rememberCoroutineScope()
@@ -172,8 +185,13 @@ fun MapScreen(
     var routeTargetHousehold by remember { mutableStateOf<HouseholdRecord?>(null) }
     var routeLoading by remember { mutableStateOf(false) }
     var routeLoadError by remember { mutableStateOf<String?>(null) }
+    var isNavigationActive by remember { mutableStateOf(false) }
+    var activeNavigationHouseholdId by remember { mutableStateOf<String?>(null) }
     var pendingRouteHousehold by remember { mutableStateOf<HouseholdRecord?>(null) }
+    var activateNavigationAfterPermission by remember { mutableStateOf(false) }
     var localSelectedHouseholdId by remember { mutableStateOf<String?>(null) }
+    var hasInitializedViewport by remember { mutableStateOf(false) }
+    var hasPromptedInitialLocationPermission by remember { mutableStateOf(false) }
     var hasLocationPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -183,33 +201,14 @@ fun MapScreen(
         )
     }
 
-    LaunchedEffect(Unit) {
-        // #region agent log
-        agentDebugLog(
-            runId = "run1",
-            hypothesisId = "H5",
-            location = "MapScreen.kt:composeEntry",
-            message = "MapScreen composed",
-            data = mapOf("householdCount" to households.size)
-        )
-        // #endregion
-    }
-
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        // #region agent log
-        agentDebugLog(
-            runId = "run1",
-            hypothesisId = "H3",
-            location = "MapScreen.kt:permissionResult",
-            message = "Location permission result",
-            data = mapOf("granted" to granted)
-        )
-        // #endregion
         hasLocationPermission = granted
         val pending = pendingRouteHousehold
         pendingRouteHousehold = null
+        val activateAfterPermission = activateNavigationAfterPermission
+        activateNavigationAfterPermission = false
         if (granted && pending != null) {
             scope.launch {
                 routeLoading = true
@@ -224,34 +223,52 @@ fun MapScreen(
                     result.onSuccess { pts ->
                         routePoints = pts
                         routeTargetHousehold = pending
+                        if (activateAfterPermission) {
+                            isNavigationActive = true
+                            activeNavigationHouseholdId = pending.id
+                        }
                     }.onFailure { e ->
                         routeLoadError = e.message ?: "Route failed"
+                        if (activateAfterPermission) {
+                            isNavigationActive = false
+                            activeNavigationHouseholdId = null
+                        }
                     }
                 } finally {
                     routeLoading = false
+                }
+            }
+        } else if (granted && pending == null && !hasInitializedViewport && initialViewportState == null) {
+            scope.launch {
+                val fused = LocationServices.getFusedLocationProviderClient(context)
+                val currentLocation = runCatching {
+                    fused.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, null).await()
+                }.getOrNull() ?: runCatching {
+                    fused.lastLocation.await()
+                }.getOrNull()
+                if (currentLocation != null) {
+                    cameraPositionState.move(
+                        CameraUpdateFactory.newLatLngZoom(
+                            LatLng(currentLocation.latitude, currentLocation.longitude),
+                            13f
+                        )
+                    )
+                    hasInitializedViewport = true
                 }
             }
         } else if (!granted) {
             routeLoadError = "Location permission is needed to show a route from your position."
         }
     }
-    val requestRouteForHousehold: (HouseholdRecord) -> Unit = { household ->
+    val requestRouteForHousehold: (HouseholdRecord, Boolean) -> Unit = { household, activateOnSuccess ->
         scope.launch {
-            // #region agent log
-            agentDebugLog(
-                runId = "run1",
-                hypothesisId = "H6",
-                location = "MapScreen.kt:requestRouteForHousehold",
-                message = "Route requested from map action",
-                data = mapOf("householdId" to household.id)
-            )
-            // #endregion
             if (ContextCompat.checkSelfPermission(
                     context,
                     Manifest.permission.ACCESS_FINE_LOCATION
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
                 pendingRouteHousehold = household
+                activateNavigationAfterPermission = activateOnSuccess
                 locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                 return@launch
             }
@@ -267,8 +284,16 @@ fun MapScreen(
                 result.onSuccess { pts ->
                     routePoints = pts
                     routeTargetHousehold = household
+                    if (activateOnSuccess) {
+                        isNavigationActive = true
+                        activeNavigationHouseholdId = household.id
+                    }
                 }.onFailure { e ->
                     routeLoadError = e.message ?: "Route failed"
+                    if (activateOnSuccess) {
+                        isNavigationActive = false
+                        activeNavigationHouseholdId = null
+                    }
                 }
             } finally {
                 routeLoading = false
@@ -282,15 +307,43 @@ fun MapScreen(
             routePoints = null
             routeTargetHousehold = null
             routeLoadError = null
+            isNavigationActive = false
+            activeNavigationHouseholdId = null
         }
     }
 
-    LaunchedEffect(mapMarkers, selectedHouseholdId) {
+    LaunchedEffect(mapMarkers, selectedHouseholdId, hasLocationPermission) {
+        if (initialViewportState != null) return@LaunchedEffect
+        if (hasInitializedViewport) return@LaunchedEffect
         if (selectedHouseholdId != null) return@LaunchedEffect
+        if (!hasLocationPermission && !hasPromptedInitialLocationPermission) {
+            hasPromptedInitialLocationPermission = true
+            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            return@LaunchedEffect
+        }
+        if (hasLocationPermission) {
+            val fused = LocationServices.getFusedLocationProviderClient(context)
+            val currentLocation = runCatching {
+                fused.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, null).await()
+            }.getOrNull() ?: runCatching {
+                fused.lastLocation.await()
+            }.getOrNull()
+            if (currentLocation != null) {
+                cameraPositionState.move(
+                    CameraUpdateFactory.newLatLngZoom(
+                        LatLng(currentLocation.latitude, currentLocation.longitude),
+                        13f
+                    )
+                )
+                hasInitializedViewport = true
+                return@LaunchedEffect
+            }
+        }
         if (mapMarkers.isNotEmpty()) {
             cameraPositionState.move(
                 CameraUpdateFactory.newLatLngZoom(mapMarkers.first().second, 13f)
             )
+            hasInitializedViewport = true
         } else {
             cameraPositionState.move(
                 CameraUpdateFactory.newLatLngZoom(defaultCenter, 10f)
@@ -299,19 +352,6 @@ fun MapScreen(
     }
 
     LaunchedEffect(selectedHouseholdId, viewMode, mapMarkers) {
-        // #region agent log
-        agentDebugLog(
-            runId = "run1",
-            hypothesisId = "H7",
-            location = "MapScreen.kt:selectedHouseholdEffect",
-            message = "Selection effect triggered",
-            data = mapOf(
-                "selectedHouseholdId" to (selectedHouseholdId ?: ""),
-                "viewMode" to viewMode,
-                "markerCount" to mapMarkers.size
-            )
-        )
-        // #endregion
         if (viewMode != "map") return@LaunchedEffect
         val id = selectedHouseholdId ?: return@LaunchedEffect
         localSelectedHouseholdId = id
@@ -321,14 +361,27 @@ fun MapScreen(
             400
         )
     }
+    val shouldPersistViewport = initialViewportState != null || hasInitializedViewport
+    LaunchedEffect(cameraPositionState, shouldPersistViewport) {
+        snapshotFlow { cameraPositionState.position }.collectLatest { pos ->
+            if (!shouldPersistViewport) return@collectLatest
+            onViewportStateChanged(
+                MapViewportState(
+                    latitude = pos.target.latitude,
+                    longitude = pos.target.longitude,
+                    zoom = pos.zoom,
+                    tilt = pos.tilt,
+                    bearing = pos.bearing
+                )
+            )
+        }
+    }
     Box(modifier.fillMaxSize()) {
-    val density = LocalDensity.current
     Column(
         Modifier
             .fillMaxSize()
             .padding(12.dp)
             .padding(end = 10.dp)
-            .verticalScroll(pageScrollState)
     ) {
         SingleChoiceSegmentedButtonRow(modifier = Modifier.padding(bottom = 8.dp)) {
             SegmentedButton(
@@ -362,13 +415,6 @@ fun MapScreen(
                 .padding(bottom = 8.dp),
             singleLine = true,
             label = { Text("Search name or address") }
-        )
-        Text(
-            if (viewMode == "map") {
-                "Map pins (filters: Configure)"
-            } else {
-                "Address list (filters: Configure)"
-            }
         )
         if (viewMode == "map") {
             if (!hasMapsApiMetadata) {
@@ -434,25 +480,23 @@ fun MapScreen(
                         Marker(
                             state = markerState,
                             title = household.name,
-                            snippet = household.streetAddress,
+                            snippet = buildString {
+                                append(formatBriefComment(household.briefComment))
+                                append("\n")
+                                append(
+                                    parseIsoDateOrNull(household.lastVisited)?.format(prettyDateFormatter)
+                                        ?: "Not visited"
+                                )
+                            },
                             icon = markerDescriptorForBriefComment(household.briefComment),
                             zIndex = if (isSelected) 2f else 0f,
                             onClick = {
-                                // #region agent log
-                                agentDebugLog(
-                                    runId = "run1",
-                                    hypothesisId = "H7",
-                                    location = "MapScreen.kt:markerOnClick",
-                                    message = "Map marker clicked",
-                                    data = mapOf("householdId" to household.id)
-                                )
-                                // #endregion
-                                localSelectedHouseholdId = household.id
+                                localSelectedHouseholdId = if (isSelected) null else household.id
                                 onHouseholdSelected(household)
                                 false
                             },
                             onInfoWindowClick = {
-                                requestRouteForHousehold(household)
+                                requestRouteForHousehold(household, false)
                             }
                         )
                     }
@@ -468,20 +512,45 @@ fun MapScreen(
                             .fillMaxWidth()
                             .padding(top = 4.dp)
                     ) {
-                        TextButton(onClick = { requestRouteForHousehold(selectedHousehold) }) {
-                            Text("Show route")
+                        val isActiveForSelection =
+                            isNavigationActive && activeNavigationHouseholdId == selectedHousehold.id
+                        Button(
+                            onClick = {
+                                if (isActiveForSelection) {
+                                    isNavigationActive = false
+                                    activeNavigationHouseholdId = null
+                                } else {
+                                    val hasCurrentRoute = routeTargetHousehold?.id == selectedHousehold.id &&
+                                        !routePoints.isNullOrEmpty()
+                                    if (hasCurrentRoute) {
+                                        isNavigationActive = true
+                                        activeNavigationHouseholdId = selectedHousehold.id
+                                    } else {
+                                        requestRouteForHousehold(selectedHousehold, true)
+                                    }
+                                }
+                            }
+                        ) {
+                            Text(if (isActiveForSelection) "End" else "Start")
                         }
-                        TextButton(
+                        Button(
                             onClick = {
                                 openGoogleMapsNavigation(
                                     context,
-                                    selectedHousehold.streetAddress,
-                                    "selected_household_actions"
+                                    selectedHousehold.streetAddress
                                 )
                             }
                         ) {
-                            Text("Open in Google Maps")
+                            Text("Google Maps")
                         }
+                    }
+                    if (isNavigationActive && activeNavigationHouseholdId == selectedHousehold.id) {
+                        Text(
+                            "Navigation active",
+                            modifier = Modifier.padding(top = 2.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }
@@ -499,32 +568,6 @@ fun MapScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
-            }
-            if (routePoints != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp)
-                ) {
-                    TextButton(
-                        onClick = {
-                            routePoints = null
-                            routeTargetHousehold = null
-                            routeLoadError = null
-                        }
-                    ) {
-                        Text("Clear route")
-                    }
-                    TextButton(
-                        onClick = {
-                            routeTargetHousehold?.let { h ->
-                                openGoogleMapsNavigation(context, h.streetAddress, "route_actions_row")
-                            }
-                        }
-                    ) {
-                        Text("Open in Google Maps")
-                    }
-                }
             }
         } else {
             LazyColumn {
@@ -560,18 +603,9 @@ fun MapScreen(
                             }
                             IconButton(
                                 onClick = {
-                                    // #region agent log
-                                    agentDebugLog(
-                                        runId = "run1",
-                                        hypothesisId = "H1",
-                                        location = "MapScreen.kt:listDirectionsClick",
-                                        message = "List directions tapped",
-                                        data = mapOf("householdId" to household.id)
-                                    )
-                                    // #endregion
                                     onHouseholdSelected(household)
                                     viewMode = "map"
-                                    requestRouteForHousehold(household)
+                                    requestRouteForHousehold(household, false)
                                 }
                             ) {
                                 Icon(
@@ -585,32 +619,6 @@ fun MapScreen(
             }
         }
     }
-        if (pageScrollState.maxValue > 0 && pageScrollState.viewportSize > 0) {
-            val viewportPx = pageScrollState.viewportSize.toFloat()
-            val contentPx = viewportPx + pageScrollState.maxValue
-            val minThumbPx = with(density) { 24.dp.toPx() }
-            val thumbHeightPx = ((viewportPx / contentPx) * viewportPx).coerceAtLeast(minThumbPx)
-            val maxThumbOffset = (viewportPx - thumbHeightPx).coerceAtLeast(0f)
-            val thumbOffset = if (pageScrollState.maxValue == 0) 0f else {
-                (pageScrollState.value.toFloat() / pageScrollState.maxValue.toFloat()) * maxThumbOffset
-            }
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 12.dp, end = 2.dp)
-                    .fillMaxHeight()
-                    .width(4.dp)
-                    .background(Color(0x22000000))
-            ) {
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(0, thumbOffset.toInt()) }
-                        .width(4.dp)
-                        .height(with(density) { thumbHeightPx.toDp() })
-                        .background(MaterialTheme.colorScheme.primary)
-                )
-            }
-        }
         FloatingActionButton(
             onClick = { showAddPersonDialog = true },
             modifier = Modifier
@@ -657,26 +665,8 @@ private suspend fun loadDrivingRoutePreview(
     apiKey: String,
     cameraPositionState: CameraPositionState
 ): Result<List<LatLng>> {
-    // #region agent log
-    agentDebugLog(
-        runId = "run1",
-        hypothesisId = "H2",
-        location = "MapScreen.kt:loadDrivingRoutePreview:start",
-        message = "Route preview request started",
-        data = mapOf("householdId" to household.id, "hasApiKey" to apiKey.isNotBlank())
-    )
-    // #endregion
     val dest = destinationLatLng(context, household)
     if (dest == null) {
-        // #region agent log
-        agentDebugLog(
-            runId = "run1",
-            hypothesisId = "H2",
-            location = "MapScreen.kt:loadDrivingRoutePreview:destinationMissing",
-            message = "Route destination could not be resolved",
-            data = mapOf("householdId" to household.id)
-        )
-        // #endregion
         return Result.failure(IllegalArgumentException("Could not resolve destination address."))
     }
     val fused = LocationServices.getFusedLocationProviderClient(context)
@@ -687,20 +677,6 @@ private suspend fun loadDrivingRoutePreview(
     } ?: return Result.failure(IllegalStateException("Current location unavailable."))
     val origin = LatLng(loc.latitude, loc.longitude)
     val routeResult = DirectionsRouteFetcher.fetchDrivingRoute(origin, dest, apiKey)
-    // #region agent log
-    agentDebugLog(
-        runId = "run1",
-        hypothesisId = "H2",
-        location = "MapScreen.kt:loadDrivingRoutePreview:result",
-        message = "Route preview request completed",
-        data = mapOf(
-            "householdId" to household.id,
-            "success" to routeResult.isSuccess,
-            "points" to (routeResult.getOrNull()?.size ?: 0),
-            "error" to (routeResult.exceptionOrNull()?.message ?: "")
-        )
-    )
-    // #endregion
     routeResult.onSuccess { points -> fitCameraToRoute(cameraPositionState, points) }
     return routeResult
 }
@@ -731,81 +707,12 @@ private fun fitCameraToRoute(cameraPositionState: CameraPositionState, points: L
 
 private fun openGoogleMapsNavigation(
     context: android.content.Context,
-    address: String,
-    source: String
+    address: String
 ) {
-    // #region agent log
-    agentDebugLog(
-        runId = "run1",
-        hypothesisId = "H1",
-        location = "MapScreen.kt:openGoogleMapsNavigation",
-        message = "External Google Maps launch invoked",
-        data = mapOf("source" to source)
-    )
-    // #endregion
     val uri = Uri.parse("google.navigation:q=${Uri.encode(address)}")
     context.startActivity(
         Intent(Intent.ACTION_VIEW, uri).apply {
             setPackage("com.google.android.apps.maps")
         }
     )
-}
-
-private fun agentDebugLog(
-    runId: String,
-    hypothesisId: String,
-    location: String,
-    message: String,
-    data: Map<String, Any?>
-) {
-    runCatching {
-        val dataJson = JSONObject().apply {
-            data.forEach { (k, v) -> put(k, v) }
-        }
-        val payload = JSONObject().apply {
-            put("sessionId", "1abea7")
-            put("runId", runId)
-            put("hypothesisId", hypothesisId)
-            put("location", location)
-            put("message", message)
-            put("data", dataJson)
-            put("timestamp", System.currentTimeMillis())
-        }.toString()
-        Thread {
-            runCatching {
-                val endpoints = listOf(
-                    "http://10.0.2.2:7747/ingest/f7368b29-184e-4539-ae18-cb2344a4388c",
-                    "http://127.0.0.1:7747/ingest/f7368b29-184e-4539-ae18-cb2344a4388c"
-                )
-                endpoints.forEach { endpoint ->
-                    runCatching {
-                        // #region agent log
-                        Log.d("AgentDebug", "send log to $endpoint")
-                        // #endregion
-                        val conn = URL(endpoint).openConnection() as HttpURLConnection
-                        conn.requestMethod = "POST"
-                        conn.connectTimeout = 3000
-                        conn.readTimeout = 3000
-                        conn.doOutput = true
-                        conn.setRequestProperty("Content-Type", "application/json")
-                        conn.setRequestProperty("X-Debug-Session-Id", "1abea7")
-                        OutputStreamWriter(conn.outputStream).use { it.write(payload) }
-                        conn.inputStream.close()
-                        // #region agent log
-                        Log.d("AgentDebug", "log sent to $endpoint with code=${conn.responseCode}")
-                        // #endregion
-                        conn.disconnect()
-                    }.onFailure { e ->
-                        // #region agent log
-                        Log.e("AgentDebug", "log send failed to $endpoint: ${e.message}")
-                        // #endregion
-                    }
-                }
-            }.onFailure { e ->
-                // #region agent log
-                Log.e("AgentDebug", "logger thread failed: ${e.message}")
-                // #endregion
-            }
-        }.start()
-    }
 }

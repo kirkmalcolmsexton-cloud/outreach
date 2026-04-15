@@ -29,8 +29,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import org.outreach.app.BuildConfig
-import org.outreach.core.debug.AgentDebugLogger
 import org.outreach.core.model.AppConfig
 import org.outreach.feature.map.formatBriefComment
 
@@ -116,18 +114,6 @@ fun SettingsScreen(
         if (canApplySaved) {
             spreadsheetId = savedConfig.spreadsheetId
             selectedTabs = savedConfig.selectedTabs
-            if (BuildConfig.DEBUG) {
-                AgentDebugLogger.log(
-                    runId = "run8",
-                    hypothesisId = "H21",
-                    location = "SettingsScreen.kt:LaunchedEffect(savedSpreadsheetId)",
-                    message = "Loaded saved configuration into settings fields",
-                    data = mapOf(
-                        "savedSpreadsheetPrefix" to savedConfig.spreadsheetId.take(64),
-                        "savedTabsCount" to savedConfig.selectedTabs.size
-                    )
-                )
-            }
         }
     }
     LaunchedEffect(savedConfig.selectedTabs) {
