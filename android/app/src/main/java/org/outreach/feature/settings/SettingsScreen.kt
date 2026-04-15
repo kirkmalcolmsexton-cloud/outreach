@@ -140,19 +140,6 @@ fun SettingsScreen(
     }
 
     LaunchedEffect(pickedSpreadsheetId) {
-        if (BuildConfig.DEBUG) {
-            AgentDebugLogger.log(
-                runId = "run2",
-                hypothesisId = "H7",
-                location = "SettingsScreen.kt:LaunchedEffect(pickedSpreadsheetId)",
-                message = "Settings received picker result",
-                data = mapOf(
-                    "pickedIsNull" to (pickedSpreadsheetId == null),
-                    "pickedPrefix" to (pickedSpreadsheetId?.take(64) ?: ""),
-                    "pickedLooksLikeContentUri" to (pickedSpreadsheetId?.startsWith("content://") ?: false)
-                )
-            )
-        }
         if (!pickedSpreadsheetId.isNullOrBlank()) {
             val shouldApplyPickedValue =
                 spreadsheetId.isBlank() || spreadsheetId == lastAutoFilledSpreadsheetId
@@ -164,19 +151,6 @@ fun SettingsScreen(
                 } else {
                     "Spreadsheet selected from Drive"
                 }
-            } else {
-                if (BuildConfig.DEBUG) {
-                    AgentDebugLogger.log(
-                        runId = "run6",
-                        hypothesisId = "H18",
-                        location = "SettingsScreen.kt:LaunchedEffect(pickedSpreadsheetId)",
-                        message = "Skipped auto-fill to preserve manual spreadsheet edit",
-                        data = mapOf(
-                            "currentPrefix" to spreadsheetId.take(64),
-                            "pickedPrefix" to pickedSpreadsheetId.take(64)
-                        )
-                    )
-                }
             }
         }
     }
@@ -185,21 +159,6 @@ fun SettingsScreen(
     }
     LaunchedEffect(normalizedSpreadsheetId) {
         val normalized = normalizedSpreadsheetId
-        // #region agent log
-        if (BuildConfig.DEBUG) {
-            AgentDebugLogger.log(
-                runId = "sheet-switch",
-                hypothesisId = "SS2",
-                location = "SettingsScreen.kt:LaunchedEffect(normalizedSpreadsheetId)",
-                message = "Spreadsheet normalization state changed",
-                data = mapOf(
-                    "rawInputPrefix" to spreadsheetId.take(64),
-                    "normalizedSuffix" to (normalized?.takeLast(6) ?: ""),
-                    "lastLoadedSuffix" to (lastLoadedSpreadsheetId?.takeLast(6) ?: "")
-                )
-            )
-        }
-        // #endregion
         if (normalized == null) {
             availableZipTabs = emptyList()
             isLoadingTabs = false
@@ -221,40 +180,11 @@ fun SettingsScreen(
                     }
                     lastLoadedSpreadsheetId = normalized
                     isLoadingTabs = false
-                    // #region agent log
-                    if (BuildConfig.DEBUG) {
-                        AgentDebugLogger.log(
-                            runId = "sheet-switch",
-                            hypothesisId = "SS3",
-                            location = "SettingsScreen.kt:onLoadTabs.onSuccess",
-                            message = "Loaded tabs for normalized spreadsheet",
-                            data = mapOf(
-                                "normalizedSuffix" to normalized.takeLast(6),
-                                "tabsCount" to tabs.size,
-                                "zipTabsCount" to zipTabs.size,
-                                "zipTabsPreview" to zipTabs.take(8)
-                            )
-                        )
-                    }
-                    // #endregion
                 }
                 .onFailure {
                     availableZipTabs = emptyList()
                     status = "Unable to load tabs. Check spreadsheet access and try again."
                     isLoadingTabs = false
-                    // #region agent log
-                    if (BuildConfig.DEBUG) {
-                        AgentDebugLogger.log(
-                            runId = "sheet-switch",
-                            hypothesisId = "SS4",
-                            location = "SettingsScreen.kt:onLoadTabs.onFailure",
-                            message = "Failed loading tabs for spreadsheet",
-                            data = mapOf(
-                                "normalizedSuffix" to normalized.takeLast(6)
-                            )
-                        )
-                    }
-                    // #endregion
                 }
         }
     }
@@ -268,21 +198,7 @@ fun SettingsScreen(
         OutlinedTextField(
             modifier = Modifier.fillMaxWidth(),
             value = spreadsheetId,
-            onValueChange = {
-                spreadsheetId = it
-                if (BuildConfig.DEBUG && (it.startsWith("http") || it.contains("/spreadsheets/d/"))) {
-                    AgentDebugLogger.log(
-                        runId = "run6",
-                        hypothesisId = "H19",
-                        location = "SettingsScreen.kt:spreadsheetIdOnValueChange",
-                        message = "Spreadsheet input changed to URL-like value",
-                        data = mapOf(
-                            "inputPrefix" to it.take(64),
-                            "inputLength" to it.length
-                        )
-                    )
-                }
-            },
+            onValueChange = { spreadsheetId = it },
             label = { Text("Spreadsheet ID") }
         )
         Spacer(modifier = Modifier.height(8.dp))
@@ -426,49 +342,9 @@ fun SettingsScreen(
         Button(
             onClick = {
                 val normalized = normalizeSpreadsheetIdInput(spreadsheetId)
-                if (BuildConfig.DEBUG) {
-                    AgentDebugLogger.log(
-                        runId = "run2",
-                        hypothesisId = "H8",
-                        location = "SettingsScreen.kt:SaveSheetConfiguration",
-                        message = "User tapped Save Sheet Configuration",
-                        data = mapOf(
-                            "spreadsheetInputPrefix" to spreadsheetId.take(64),
-                            "spreadsheetInputLength" to spreadsheetId.length,
-                            "tabsCount" to selectedTabs.size
-                        )
-                    )
-                }
                 if (normalized == null) {
-                    if (BuildConfig.DEBUG) {
-                        AgentDebugLogger.log(
-                            runId = "run4",
-                            hypothesisId = "H15",
-                            location = "SettingsScreen.kt:SaveSheetConfiguration",
-                            message = "Rejected save due to invalid spreadsheet identifier",
-                            data = mapOf(
-                                "looksLikeContentUri" to spreadsheetId.trim().startsWith("content://"),
-                                "inputSuffix" to spreadsheetId.takeLast(18)
-                            )
-                        )
-                    }
                     status = "Could not save: paste a Google Sheets URL (contains /spreadsheets/d/...) or raw Sheet ID."
                 } else {
-                    // #region agent log
-                    if (BuildConfig.DEBUG) {
-                        AgentDebugLogger.log(
-                            runId = "sheet-switch",
-                            hypothesisId = "SS1",
-                            location = "SettingsScreen.kt:SaveSheetConfiguration",
-                            message = "Saving normalized spreadsheet config",
-                            data = mapOf(
-                                "normalizedSuffix" to normalized.takeLast(6),
-                                "previousSuffix" to savedConfig.spreadsheetId.takeLast(6),
-                                "tabsCount" to selectedTabs.size
-                            )
-                        )
-                    }
-                    // #endregion
                     onUpdateConfig(
                         AppConfig(
                             spreadsheetId = normalized,
@@ -529,32 +405,7 @@ fun SettingsScreen(
         Button(
             onClick = {
                 val normalized = normalizeSpreadsheetIdInput(spreadsheetId)
-                if (BuildConfig.DEBUG) {
-                    AgentDebugLogger.log(
-                        runId = "run2",
-                        hypothesisId = "H9",
-                        location = "SettingsScreen.kt:ValidateSheetSchema",
-                        message = "User tapped Validate Sheet Schema",
-                        data = mapOf(
-                            "spreadsheetInputPrefix" to spreadsheetId.take(64),
-                            "spreadsheetInputLength" to spreadsheetId.length,
-                            "tabsCount" to selectedTabs.size
-                        )
-                    )
-                }
                 if (normalized == null) {
-                    if (BuildConfig.DEBUG) {
-                        AgentDebugLogger.log(
-                            runId = "run4",
-                            hypothesisId = "H16",
-                            location = "SettingsScreen.kt:ValidateSheetSchema",
-                            message = "Blocked validation due to invalid spreadsheet identifier",
-                            data = mapOf(
-                                "looksLikeContentUri" to spreadsheetId.trim().startsWith("content://"),
-                                "inputSuffix" to spreadsheetId.takeLast(18)
-                            )
-                        )
-                    }
                     status = "Cannot validate URI from Drive picker. Paste a Google Sheets URL or raw Sheet ID."
                     return@Button
                 }

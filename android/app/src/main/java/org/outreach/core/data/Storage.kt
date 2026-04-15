@@ -25,8 +25,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
-import org.outreach.app.BuildConfig
-import org.outreach.core.debug.AgentDebugLogger
 import org.outreach.core.model.AppConfig
 import org.outreach.core.model.CollaborationEvent
 import org.outreach.core.model.HouseholdRecord
@@ -376,23 +374,6 @@ class GoogleSheetsApi(
         val required = setOf("brief comments", "last visited", "name", "street address", "neighborhood", "notes")
         val missing = required.filterNot { it in headers }
         val valid = missing.isEmpty()
-        // #region agent log
-        if (BuildConfig.DEBUG) {
-            AgentDebugLogger.log(
-                runId = "sheet-debug",
-                hypothesisId = "S3",
-                location = "Storage.kt:validateRequiredHeaders",
-                message = "Validated tab headers",
-                data = mapOf(
-                    "spreadsheetIdSuffix" to spreadsheetId.takeLast(6),
-                    "tabName" to tabName,
-                    "headersCount" to headers.size,
-                    "missingHeaders" to missing,
-                    "isValid" to valid
-                )
-            )
-        }
-        // #endregion
         return valid
     }
 
@@ -400,23 +381,7 @@ class GoogleSheetsApi(
         val token = tokenProvider.getAccessToken(
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive.file"
-        ) ?: run {
-            // #region agent log
-            if (BuildConfig.DEBUG) {
-                AgentDebugLogger.log(
-                    runId = "sheet-debug",
-                    hypothesisId = "S2",
-                    location = "Storage.kt:request",
-                    message = "Missing Google access token",
-                    data = mapOf(
-                        "method" to method,
-                        "path" to path.substringBefore("?")
-                    )
-                )
-            }
-            // #endregion
-            return null
-        }
+        ) ?: return null
         return withContext(Dispatchers.IO) {
             val connection = URL(path).openConnection() as HttpURLConnection
             connection.requestMethod = method
@@ -432,43 +397,8 @@ class GoogleSheetsApi(
             val payload = if (code in 200..299) {
                 BufferedReader(connection.inputStream.reader()).use { it.readText() }
             } else {
-                val errorPayload = runCatching {
-                    connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                }.getOrDefault("")
-                // #region agent log
-                if (BuildConfig.DEBUG) {
-                    AgentDebugLogger.log(
-                        runId = "sheet-debug",
-                        hypothesisId = "S4",
-                        location = "Storage.kt:request",
-                        message = "Sheets API request failed",
-                        data = mapOf(
-                            "method" to method,
-                            "path" to path.substringBefore("?"),
-                            "code" to code,
-                            "errorSnippet" to errorPayload.take(300)
-                        )
-                    )
-                }
-                // #endregion
                 return@withContext null
             }
-            // #region agent log
-            if (BuildConfig.DEBUG && path.contains("/values/")) {
-                AgentDebugLogger.log(
-                    runId = "sheet-debug",
-                    hypothesisId = "S1",
-                    location = "Storage.kt:request",
-                    message = "Sheets API values request succeeded",
-                    data = mapOf(
-                        "method" to method,
-                        "path" to path.substringBefore("?"),
-                        "code" to code,
-                        "payloadSize" to payload.length
-                    )
-                )
-            }
-            // #endregion
             if (payload.isBlank()) null else JSONObject(payload)
         }
     }
@@ -557,20 +487,6 @@ class GeocodingService(
             val result = geocoder.getFromLocationName(address, 1).orEmpty().firstOrNull()
             result?.latitude?.let { lat -> result.longitude.let { lng -> lat to lng } }
         }.getOrNull()
-        if (BuildConfig.DEBUG) {
-            // #region agent log
-            AgentDebugLogger.log(
-                runId = "run14",
-                hypothesisId = "H54",
-                location = "Storage.kt:GeocodingService.geocodeAddress",
-                message = "Geocoding attempted for household address",
-                data = mapOf(
-                    "addressPrefix" to address.take(48),
-                    "resolved" to (latLng != null)
-                )
-            )
-            // #endregion
-        }
         latLng
     }
 }
@@ -613,84 +529,20 @@ class OutreachRepository(
     }
 
     suspend fun isSheetSchemaValid(spreadsheetId: String, selectedTabs: Set<String>): Boolean {
-        // #region agent log
-        if (BuildConfig.DEBUG) {
-            AgentDebugLogger.log(
-                runId = "sheet-debug",
-                hypothesisId = "S1",
-                location = "Storage.kt:isSheetSchemaValid",
-                message = "Starting schema validation",
-                data = mapOf(
-                    "spreadsheetIdSuffix" to spreadsheetId.takeLast(6),
-                    "tabsCount" to selectedTabs.size,
-                    "tabs" to selectedTabs.toList()
-                )
-            )
-        }
-        // #endregion
         if (spreadsheetId.isBlank() || selectedTabs.isEmpty()) return false
         val perTabResults = selectedTabs.associateWith { sheetsApi.validateRequiredHeaders(spreadsheetId, it) }
-        val valid = perTabResults.values.all { it }
-        // #region agent log
-        if (BuildConfig.DEBUG) {
-            AgentDebugLogger.log(
-                runId = "sheet-debug",
-                hypothesisId = "S5",
-                location = "Storage.kt:isSheetSchemaValid",
-                message = "Finished schema validation",
-                data = mapOf(
-                    "perTabResults" to perTabResults,
-                    "isValid" to valid
-                )
-            )
-        }
-        // #endregion
-        return valid
+        return perTabResults.values.all { it }
     }
 
     suspend fun syncFromSheet() {
         val cfg = configStore.config.first()
-        // #region agent log
-        if (BuildConfig.DEBUG) {
-            AgentDebugLogger.log(
-                runId = "run1",
-                hypothesisId = "H1",
-                location = "Storage.kt:syncFromSheet:configSnapshot",
-                message = "Sync started with config snapshot",
-                data = mapOf(
-                    "spreadsheetIdLength" to cfg.spreadsheetId.length,
-                    "spreadsheetIdPrefix" to cfg.spreadsheetId.take(24),
-                    "spreadsheetIdHasSlash" to cfg.spreadsheetId.contains("/"),
-                    "tabsCount" to cfg.selectedTabs.size,
-                    "tabs" to cfg.selectedTabs.toList()
-                )
-            )
-        }
-        // #endregion
         if (cfg.spreadsheetId.isBlank() || cfg.selectedTabs.isEmpty()) return
         val entities = mutableListOf<HouseholdEntity>()
         cfg.selectedTabs.forEach { tab ->
             val rows = sheetsApi.fetchRows(cfg.spreadsheetId, tab)
-            var geocodedCount = 0
-            var ungeocodedCount = 0
-            // #region agent log
-            if (BuildConfig.DEBUG) {
-                AgentDebugLogger.log(
-                    runId = "run1",
-                    hypothesisId = "H4",
-                    location = "Storage.kt:syncFromSheet:tabResult",
-                    message = "Fetched rows for selected tab",
-                    data = mapOf(
-                        "tab" to tab,
-                        "rowsCount" to rows.size
-                    )
-                )
-            }
-            // #endregion
             rows.forEachIndexed { index, row ->
                 val parsed = parseSpreadsheetRow(row, SourceMetadata(tab, index + 2))
                 val latLng = geocoder.geocodeAddress(parsed.streetAddress)
-                if (latLng == null) ungeocodedCount++ else geocodedCount++
                 entities += HouseholdEntity(
                     id = parsed.id,
                     name = parsed.name,
@@ -705,22 +557,6 @@ class OutreachRepository(
                     longitude = latLng?.second,
                     assignedTo = null
                 )
-            }
-            if (BuildConfig.DEBUG) {
-                // #region agent log
-                AgentDebugLogger.log(
-                    runId = "run13",
-                    hypothesisId = "H51",
-                    location = "Storage.kt:syncFromSheet:geocodeSummary",
-                    message = "Tab geocode summary computed",
-                    data = mapOf(
-                        "tab" to tab,
-                        "rowsCount" to rows.size,
-                        "geocodedCount" to geocodedCount,
-                        "ungeocodedCount" to ungeocodedCount
-                    )
-                )
-                // #endregion
             }
         }
         dao.upsertHouseholds(entities)
