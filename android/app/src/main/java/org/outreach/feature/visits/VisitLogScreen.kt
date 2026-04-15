@@ -29,6 +29,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.normalizeBriefComment
+import org.outreach.feature.map.shareHouseholdLocation
 
 private val defaultBriefPresets = listOf(
     "Not home",
@@ -105,6 +106,13 @@ fun VisitLogScreen(
             if (selectedHousehold.neighborhood.isNotBlank()) {
                 Text("Neighborhood: ${selectedHousehold.neighborhood}")
             }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = { shareHouseholdLocation(context, selectedHousehold) }
+            ) {
+                Text("Share location")
+            }
+            Spacer(Modifier.height(8.dp))
             Text(
                 "Current brief: ${
                     selectedHousehold.briefComment
