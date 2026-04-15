@@ -16,6 +16,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.google.firebase.firestore.FirebaseFirestore
@@ -41,6 +43,7 @@ import java.io.BufferedReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
 
@@ -123,20 +126,30 @@ interface OutreachDao {
 
     @Query("SELECT COUNT(*) FROM households")
     suspend fun householdRowCount(): Int
+
+    @Query("SELECT * FROM households")
+    suspend fun householdSnapshot(): List<HouseholdEntity>
 }
 
 @Database(
     entities = [HouseholdEntity::class, PendingSyncEntity::class, PendingAppendEntity::class],
-    version = 3
+    version = 4
 )
 @TypeConverters
 abstract class OutreachDatabase : RoomDatabase() {
     abstract fun dao(): OutreachDao
 
     companion object {
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Version 4 locks in explicit migration path instead of destructive fallback.
+                // Existing version 3 schema is already compatible with current entities.
+            }
+        }
+
         fun create(context: Context): OutreachDatabase =
             Room.databaseBuilder(context, OutreachDatabase::class.java, "outreach.db")
-                .fallbackToDestructiveMigration()
+                .addMigrations(MIGRATION_3_4)
                 .build()
     }
 }
@@ -256,6 +269,25 @@ interface GoogleAccessTokenProvider {
     suspend fun getAccessToken(vararg scopes: String): String?
 }
 
+sealed interface SheetsRequestResult {
+    data class Success(val body: JSONObject?) : SheetsRequestResult
+    data class Failure(val code: Int?, val message: String) : SheetsRequestResult
+}
+
+internal fun SheetsRequestResult.bodyOrThrow(): JSONObject? = when (this) {
+    is SheetsRequestResult.Success -> body
+    is SheetsRequestResult.Failure -> throw IOException(
+        if (code != null) "Google API request failed ($code): $message" else "Google API request failed: $message"
+    )
+}
+
+internal fun sortEpochForLastVisited(lastVisited: String?, now: LocalDate = LocalDate.now()): Long {
+    return lastVisited
+        ?.let { value -> runCatching { LocalDate.parse(value) }.getOrNull() }
+        ?.toEpochDay()
+        ?: (now.toEpochDay() - 100000)
+}
+
 class GoogleSheetsApi(
     private val tokenProvider: GoogleAccessTokenProvider
 ) : SheetsApi {
@@ -271,7 +303,7 @@ class GoogleSheetsApi(
             "https://www.googleapis.com/drive/v3/files" +
                 "?q=$encodedQ&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=50" +
                 "&includeItemsFromAllDrives=true&supportsAllDrives=true"
-        val response = request(method = "GET", path = path)
+        val response = request(method = "GET", path = path).bodyOrThrow()
         val files = response?.optJSONArray("files") ?: JSONArray()
         if (files.length() == 0) {
             val fallbackPath =
@@ -282,7 +314,7 @@ class GoogleSheetsApi(
                     ) +
                     "&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=200" +
                     "&includeItemsFromAllDrives=true&supportsAllDrives=true"
-            val fallback = request(method = "GET", path = fallbackPath)
+            val fallback = request(method = "GET", path = fallbackPath).bodyOrThrow()
             val fallbackFiles = fallback?.optJSONArray("files") ?: JSONArray()
             // #region agent log
             agentDebugLog(
@@ -367,7 +399,7 @@ class GoogleSheetsApi(
         val response = request(
             method = "GET",
             path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId?fields=properties.title"
-        ) ?: return null
+        ).bodyOrThrow() ?: return null
         return response.optJSONObject("properties")
             ?.optString("title")
             ?.trim()
@@ -378,7 +410,7 @@ class GoogleSheetsApi(
         val response = request(
             method = "GET",
             path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId?fields=sheets.properties.title"
-        ) ?: return emptyList()
+        ).bodyOrThrow() ?: return emptyList()
         val sheets = response.optJSONArray("sheets") ?: JSONArray()
         return buildList {
             for (i in 0 until sheets.length()) {
@@ -397,7 +429,7 @@ class GoogleSheetsApi(
         val response = request(
             method = "GET",
             path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
-        ) ?: return emptyList()
+        ).bodyOrThrow() ?: return emptyList()
         val values = response.optJSONArray("values") ?: JSONArray()
         if (values.length() <= 1) return emptyList()
         val headers = values.optJSONArray(0)?.toStringList().orEmpty()
@@ -452,7 +484,7 @@ class GoogleSheetsApi(
             method = "POST",
             path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values:batchUpdate",
             body = body
-        )
+        ).bodyOrThrow()
     }
 
     override suspend fun appendHouseholdRow(
@@ -482,7 +514,7 @@ class GoogleSheetsApi(
         row.forEach { inner.put(it) }
         val values = JSONArray().put(inner)
         val body = JSONObject(mapOf("values" to values))
-        val response = request(method = "POST", path = path, body = body) ?: return null
+        val response = request(method = "POST", path = path, body = body).bodyOrThrow() ?: return null
         val updates = response.optJSONObject("updates") ?: return null
         val updatedRange = updates.optString("updatedRange").trim()
         if (updatedRange.isBlank()) return null
@@ -495,7 +527,7 @@ class GoogleSheetsApi(
         val response = request(
             method = "GET",
             path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
-        ) ?: return emptyList()
+        ).bodyOrThrow() ?: return emptyList()
         val values = response.optJSONArray("values") ?: return emptyList()
         if (values.length() == 0) return emptyList()
         val headers = values.optJSONArray(0)?.toStringList().orEmpty()
@@ -518,7 +550,7 @@ class GoogleSheetsApi(
         val response = request(
             method = "GET",
             path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
-        ) ?: return false
+        ).bodyOrThrow() ?: return false
         val rows = response.optJSONArray("values") ?: return false
         val headers = rows.optJSONArray(0)
             ?.toStringList()
@@ -531,7 +563,7 @@ class GoogleSheetsApi(
         return valid
     }
 
-    private suspend fun request(method: String, path: String, body: JSONObject? = null): JSONObject? {
+    private suspend fun request(method: String, path: String, body: JSONObject? = null): SheetsRequestResult {
         val requestedScopes = if (path.contains("www.googleapis.com/drive/v3/files")) {
             // Request only Drive metadata scopes for Drive file lookup calls.
             arrayOf(
@@ -560,7 +592,7 @@ class GoogleSheetsApi(
                 )
                 // #endregion
             }
-            return null
+            return SheetsRequestResult.Failure(code = null, message = "Missing Google access token")
         }
         return withContext(Dispatchers.IO) {
             val connection = URL(path).openConnection() as HttpURLConnection
@@ -595,7 +627,10 @@ class GoogleSheetsApi(
                     )
                     // #endregion
                 }
-                return@withContext null
+                return@withContext SheetsRequestResult.Failure(
+                    code = code,
+                    message = "HTTP $code for ${path.take(120)}"
+                )
             }
             if (path.contains("www.googleapis.com/drive/v3/files")) {
                 // #region agent log
@@ -612,7 +647,8 @@ class GoogleSheetsApi(
                 )
                 // #endregion
             }
-            if (payload.isBlank()) null else JSONObject(payload)
+            val json = if (payload.isBlank()) null else JSONObject(payload)
+            SheetsRequestResult.Success(json)
         }
     }
 
@@ -621,7 +657,7 @@ class GoogleSheetsApi(
         val response = request(
             method = "GET",
             path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
-        ) ?: return emptyList()
+        ).bodyOrThrow() ?: return emptyList()
         val values = response.optJSONArray("values") ?: return emptyList()
         if (values.length() == 0) return emptyList()
         return values.optJSONArray(0)?.toStringList().orEmpty()
@@ -632,7 +668,7 @@ class GoogleSheetsApi(
         val response = request(
             method = "GET",
             path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
-        ) ?: return emptyMap()
+        ).bodyOrThrow() ?: return emptyMap()
         val rows = response.optJSONArray("values") ?: return emptyMap()
         val headers = rows.optJSONArray(0)?.toStringList().orEmpty()
         return headers.mapIndexedNotNull { idx, value ->
@@ -772,11 +808,22 @@ class OutreachRepository(
         )
         // #endregion
         val entities = mutableListOf<HouseholdEntity>()
+        val geocodeCache = mutableMapOf<String, Pair<Double, Double>?>()
+        val existingById = dao.householdSnapshot().associateBy { it.id }
         cfg.selectedTabs.forEach { tab ->
             val rows = sheetsApi.fetchRows(cfg.spreadsheetId, tab)
             rows.forEachIndexed { index, row ->
                 val parsed = parseSpreadsheetRow(row, SourceMetadata(tab, index + 2))
-                val latLng = geocoder.geocodeAddress(parsed.streetAddress)
+                val existing = existingById[parsed.id]
+                val latLng = when {
+                    existing != null &&
+                        existing.streetAddress == parsed.streetAddress &&
+                        existing.latitude != null &&
+                        existing.longitude != null -> existing.latitude to existing.longitude
+                    else -> geocodeCache.getOrPut(parsed.streetAddress) {
+                        geocoder.geocodeAddress(parsed.streetAddress)
+                    }
+                }
                 entities += HouseholdEntity(
                     id = parsed.id,
                     name = parsed.name,
@@ -929,9 +976,8 @@ class OutreachRepository(
     }
 
     fun pickNextTarget(items: List<HouseholdRecord>): HouseholdRecord? {
-        val now = LocalDate.now()
         return items.minByOrNull { item ->
-            item.lastVisited?.let { LocalDate.parse(it).toEpochDay() } ?: (now.toEpochDay() - 100000)
+            sortEpochForLastVisited(item.lastVisited)
         }
     }
 }

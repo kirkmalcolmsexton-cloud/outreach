@@ -10,7 +10,7 @@ class AppShellTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun showsLoginGateInitially() {
-        composeRule.onNodeWithText("Sign in with Google SSO").assertExists()
+    fun showsHomeShellInitially() {
+        composeRule.onNodeWithText("Outreach").assertExists()
     }
 }

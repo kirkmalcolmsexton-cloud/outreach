@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -55,6 +56,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import org.outreach.core.data.OutreachServiceLocator
+import org.outreach.core.data.RepositorySyncCoordinator
 import org.outreach.core.data.SyncWorker
 import org.outreach.core.model.AppConfig
 import org.outreach.core.model.HouseholdRecord
@@ -128,6 +130,10 @@ private fun OutreachRoot() {
     var briefCommentPresets by remember { mutableStateOf<List<String>>(emptyList()) }
     var presetsLoading by remember { mutableStateOf(false) }
     var profileMenuExpanded by remember { mutableStateOf(false) }
+    var syncStatusMessage by remember { mutableStateOf<String?>(null) }
+    val syncCoordinator = remember {
+        RepositorySyncCoordinator { OutreachServiceLocator.repository }
+    }
     LaunchedEffect(Unit) {
         showStartupScreen = false
     }
@@ -389,9 +395,16 @@ private fun OutreachRoot() {
         }
     ) { innerPadding ->
         LaunchedEffect(Unit) {
-            val repository = OutreachServiceLocator.repository ?: return@LaunchedEffect
-            repository.flushPendingSync()
-            repository.syncFromSheet()
+            syncCoordinator.sync().onFailure { throwable ->
+                syncStatusMessage = "Initial sync failed: ${throwable.message ?: "unknown error"}"
+            }
+        }
+        syncStatusMessage?.let { message ->
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(innerPadding).padding(horizontal = 16.dp, vertical = 8.dp)
+            )
         }
         when (screen) {
             "home" -> MapScreen(
@@ -537,11 +550,12 @@ private fun OutreachRoot() {
                         }
                     )
                     // #endregion
-                    val repository = OutreachServiceLocator.repository
-                        ?: error("Repository not initialized")
-                    repository.setConfig(config)
-                    repository.flushPendingSync()
-                    repository.syncFromSheet()
+                    syncCoordinator.sync(config).onFailure { throwable ->
+                        syncStatusMessage = "Sync failed: ${throwable.message ?: "unknown error"}"
+                        throw throwable
+                    }.onSuccess {
+                        syncStatusMessage = null
+                    }
                 }
             )
             "visits" -> VisitLogScreen(

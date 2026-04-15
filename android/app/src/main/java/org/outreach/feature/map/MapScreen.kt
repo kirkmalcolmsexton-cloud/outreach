@@ -70,7 +70,9 @@ import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -91,6 +93,7 @@ data class MapViewportState(
 )
 
 @Composable
+@OptIn(FlowPreview::class)
 fun MapScreen(
     modifier: Modifier = Modifier,
     households: List<HouseholdRecord> = emptyList(),
@@ -417,7 +420,9 @@ fun MapScreen(
     }
     val shouldPersistViewport = initialViewportState != null || hasInitializedViewport
     LaunchedEffect(cameraPositionState, shouldPersistViewport) {
-        snapshotFlow { cameraPositionState.position }.collectLatest { pos ->
+        snapshotFlow { cameraPositionState.position }
+            .debounce(300)
+            .collectLatest { pos ->
             if (!shouldPersistViewport) return@collectLatest
             onViewportStateChanged(
                 MapViewportState(
@@ -428,7 +433,7 @@ fun MapScreen(
                     bearing = pos.bearing
                 )
             )
-        }
+            }
     }
     val selectedForActionsId = selectedHouseholdId?.takeIf { it.isNotBlank() }
         ?: localSelectedHouseholdId
@@ -460,7 +465,7 @@ fun MapScreen(
         if (viewMode == "map") {
             if (!hasMapsApiMetadata) {
                 Text(
-                    "Map API key missing. Add MAPS_API_KEY in Gradle properties to render map tiles.",
+                    "Map API key missing. Add MAPS_API_KEY to local.properties, ~/.gradle/gradle.properties, or environment variables to render map tiles.",
                     modifier = Modifier.padding(top = 12.dp)
                 )
             }
@@ -809,9 +814,14 @@ private fun openGoogleMapsNavigation(
     address: String
 ) {
     val uri = Uri.parse("google.navigation:q=${Uri.encode(address)}")
-    context.startActivity(
-        Intent(Intent.ACTION_VIEW, uri).apply {
-            setPackage("com.google.android.apps.maps")
-        }
-    )
+    val preferredIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+        setPackage("com.google.android.apps.maps")
+    }
+    val fallbackIntent = Intent(Intent.ACTION_VIEW, uri)
+    val launchIntent = when {
+        preferredIntent.resolveActivity(context.packageManager) != null -> preferredIntent
+        fallbackIntent.resolveActivity(context.packageManager) != null -> fallbackIntent
+        else -> null
+    } ?: return
+    runCatching { context.startActivity(launchIntent) }
 }
