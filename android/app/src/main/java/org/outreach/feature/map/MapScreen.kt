@@ -12,23 +12,28 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Directions
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
@@ -381,6 +386,11 @@ fun MapScreen(
             )
         }
     }
+    val selectedForActionsId = selectedHouseholdId?.takeIf { it.isNotBlank() }
+        ?: localSelectedHouseholdId
+    val selectedHouseholdForActions = selectedForActionsId?.let { sid ->
+        mapMarkers.firstOrNull { (h, _) -> h.id == sid }?.first
+    }
     Box(modifier.fillMaxSize()) {
     Column(
         Modifier
@@ -483,61 +493,14 @@ fun MapScreen(
                     }
                 }
             }
-            val selectedForActionsId = selectedHouseholdId?.takeIf { it.isNotBlank() }
-                ?: localSelectedHouseholdId
-            selectedForActionsId?.let { selectedId ->
-                val selectedHousehold = mapMarkers.firstOrNull { (h, _) -> h.id == selectedId }?.first
-                if (selectedHousehold != null) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp)
-                    ) {
-                        val isActiveForSelection =
-                            isNavigationActive && activeNavigationHouseholdId == selectedHousehold.id
-                        Button(
-                            onClick = {
-                                if (isActiveForSelection) {
-                                    isNavigationActive = false
-                                    activeNavigationHouseholdId = null
-                                } else {
-                                    val hasCurrentRoute = routeTargetHousehold?.id == selectedHousehold.id &&
-                                        !routePoints.isNullOrEmpty()
-                                    if (hasCurrentRoute) {
-                                        isNavigationActive = true
-                                        activeNavigationHouseholdId = selectedHousehold.id
-                                    } else {
-                                        requestRouteForHousehold(selectedHousehold, true)
-                                    }
-                                }
-                            }
-                        ) {
-                            Text(if (isActiveForSelection) "End" else "Start")
-                        }
-                        Button(
-                            onClick = {
-                                openGoogleMapsNavigation(
-                                    context,
-                                    selectedHousehold.streetAddress
-                                )
-                            }
-                        ) {
-                            Text("Google Maps")
-                        }
-                        Button(
-                            onClick = { shareHouseholdLocation(context, selectedHousehold) }
-                        ) {
-                            Text("Share")
-                        }
-                    }
-                    if (isNavigationActive && activeNavigationHouseholdId == selectedHousehold.id) {
-                        Text(
-                            "Navigation active",
-                            modifier = Modifier.padding(top = 2.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+            selectedHouseholdForActions?.let { selectedHousehold ->
+                if (isNavigationActive && activeNavigationHouseholdId == selectedHousehold.id) {
+                    Text(
+                        "Navigation active",
+                        modifier = Modifier.padding(top = 6.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
             if (routeLoading) {
@@ -599,10 +562,11 @@ fun MapScreen(
                                     contentDescription = "Show driving route on map"
                                 )
                             }
-                            Button(
-                                onClick = { shareHouseholdLocation(context, household) }
-                            ) {
-                                Text("Share")
+                            IconButton(onClick = { shareHouseholdLocation(context, household) }) {
+                                Icon(
+                                    Icons.Filled.Share,
+                                    contentDescription = "Share household location"
+                                )
                             }
                         }
                     }
@@ -610,15 +574,68 @@ fun MapScreen(
             }
         }
     }
-        FloatingActionButton(
-            onClick = { showAddPersonDialog = true },
+        Row(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp),
-            content = {
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val selectedHousehold = selectedHouseholdForActions
+            val hasSelectedHousehold = selectedHousehold != null
+            val isActiveForSelection = selectedHousehold?.let { selected ->
+                isNavigationActive && activeNavigationHouseholdId == selected.id
+            } ?: false
+            SmallFloatingActionButton(
+                onClick = {
+                    val household = selectedHousehold ?: return@SmallFloatingActionButton
+                    if (isActiveForSelection) {
+                        isNavigationActive = false
+                        activeNavigationHouseholdId = null
+                    } else {
+                        val hasCurrentRoute = routeTargetHousehold?.id == household.id &&
+                            !routePoints.isNullOrEmpty()
+                        if (hasCurrentRoute) {
+                            isNavigationActive = true
+                            activeNavigationHouseholdId = household.id
+                        } else {
+                            requestRouteForHousehold(household, true)
+                        }
+                    }
+                },
+                modifier = Modifier.alpha(if (hasSelectedHousehold) 1f else 0.45f)
+            ) {
+                Icon(
+                    imageVector = if (isActiveForSelection) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                    contentDescription = if (isActiveForSelection) {
+                        "End navigation"
+                    } else {
+                        "Start navigation"
+                    }
+                )
+            }
+            SmallFloatingActionButton(
+                onClick = {
+                    val household = selectedHousehold ?: return@SmallFloatingActionButton
+                    openGoogleMapsNavigation(context, household.streetAddress)
+                },
+                modifier = Modifier.alpha(if (hasSelectedHousehold) 1f else 0.45f)
+            ) {
+                Icon(Icons.Filled.Map, contentDescription = "Open in Google Maps")
+            }
+            SmallFloatingActionButton(
+                onClick = {
+                    val household = selectedHousehold ?: return@SmallFloatingActionButton
+                    shareHouseholdLocation(context, household)
+                },
+                modifier = Modifier.alpha(if (hasSelectedHousehold) 1f else 0.45f)
+            ) {
+                Icon(Icons.Filled.Share, contentDescription = "Share household location")
+            }
+            SmallFloatingActionButton(onClick = { showAddPersonDialog = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add person")
             }
-        )
+        }
         if (showAddPersonDialog) {
             AddPersonDialog(
                 selectedTabs = selectedTabs,
