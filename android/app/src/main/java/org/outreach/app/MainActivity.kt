@@ -54,6 +54,8 @@ import org.outreach.feature.map.MapViewportState
 import org.outreach.feature.map.MapScreen
 import org.outreach.feature.settings.SettingsScreen
 import org.outreach.feature.visits.VisitLogScreen
+import org.json.JSONObject
+import org.outreach.debug.agentDebugLog
 import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
@@ -135,6 +137,17 @@ private fun OutreachRoot() {
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         val extracted = extractSpreadsheetIdFromUri(uri)
+        // #region agent log
+        agentDebugLog(
+            hypothesisId = "B",
+            location = "MainActivity.documentLauncher",
+            message = "drive pick result",
+            data = JSONObject().apply {
+                put("extracted", extracted ?: JSONObject.NULL)
+                put("uriScheme", uri?.scheme ?: "")
+            }
+        )
+        // #endregion
         if (extracted != null) {
             pickedSpreadsheetId = extracted
         } else {
@@ -222,6 +235,7 @@ private fun OutreachRoot() {
                 households = households,
                 visibleZipTabs = savedConfig.selectedTabs,
                 mapBriefCommentFilter = savedConfig.mapBriefCommentFilter,
+                mapOldestRecordsLimit = savedConfig.mapOldestRecordsLimit,
                 filterStartDate = filterStartDate,
                 filterEndDate = filterEndDate,
                 initialViewportState = mapViewportState,
@@ -252,10 +266,22 @@ private fun OutreachRoot() {
                     if (repository != null) {
                         coroutineScope.launch {
                             val before = repository.config.first()
-                            repository.setConfig(config)
+                            // #region agent log
                             val sheetOrTabsChanged =
                                 config.spreadsheetId != before.spreadsheetId ||
                                     config.selectedTabs != before.selectedTabs
+                            agentDebugLog(
+                                hypothesisId = "E",
+                                location = "MainActivity.onUpdateConfig",
+                                message = "config update",
+                                data = JSONObject().apply {
+                                    put("beforeSpreadsheetId", before.spreadsheetId)
+                                    put("afterSpreadsheetId", config.spreadsheetId)
+                                    put("sheetOrTabsChanged", sheetOrTabsChanged)
+                                }
+                            )
+                            // #endregion
+                            repository.setConfig(config)
                             if (sheetOrTabsChanged &&
                                 config.spreadsheetId.isNotBlank() &&
                                 config.selectedTabs.isNotEmpty()
@@ -291,6 +317,9 @@ private fun OutreachRoot() {
                         onResult(Result.failure(IllegalArgumentException("Invalid spreadsheet id")))
                     }
                 },
+                onFetchSpreadsheetTitle = { spreadsheetId ->
+                    OutreachServiceLocator.repository?.fetchSpreadsheetTitle(spreadsheetId)
+                },
                 onPickSheetFromDrive = {
                     documentLauncher.launch(
                         arrayOf(
@@ -300,6 +329,17 @@ private fun OutreachRoot() {
                     )
                 },
                 onSyncFromSpreadsheet = { config ->
+                    // #region agent log
+                    agentDebugLog(
+                        hypothesisId = "E",
+                        location = "MainActivity.onSyncFromSpreadsheet",
+                        message = "manual sync",
+                        data = JSONObject().apply {
+                            put("spreadsheetId", config.spreadsheetId)
+                            put("selectedTabsCount", config.selectedTabs.size)
+                        }
+                    )
+                    // #endregion
                     val repository = OutreachServiceLocator.repository
                         ?: error("Repository not initialized")
                     repository.setConfig(config)
@@ -334,6 +374,7 @@ private fun OutreachRoot() {
                 households = households,
                 visibleZipTabs = savedConfig.selectedTabs,
                 mapBriefCommentFilter = savedConfig.mapBriefCommentFilter,
+                mapOldestRecordsLimit = savedConfig.mapOldestRecordsLimit,
                 filterStartDate = filterStartDate,
                 filterEndDate = filterEndDate,
                 initialViewportState = mapViewportState,

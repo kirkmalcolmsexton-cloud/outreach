@@ -45,3 +45,16 @@ fun filterHouseholdsForMap(
         tabMatches && briefCommentMatches && dateMatches
     }
 }
+
+fun applyOldestRecordsLimit(households: List<HouseholdRecord>, limit: Int?): List<HouseholdRecord> {
+    val requested = limit ?: return households
+    if (requested <= 0) return households
+    return households
+        .sortedWith(
+            compareBy<HouseholdRecord>(
+                { parseIsoDateOrNull(it.lastVisited)?.toEpochDay() ?: Long.MIN_VALUE },
+                { it.id }
+            )
+        )
+        .take(requested)
+}

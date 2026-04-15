@@ -29,7 +29,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import org.json.JSONObject
 import org.outreach.core.model.AppConfig
+import org.outreach.debug.agentDebugLog
 import org.outreach.feature.map.formatBriefComment
 
 @Composable
@@ -42,6 +44,7 @@ fun SettingsScreen(
     onUpdateConfig: (AppConfig) -> Unit = {},
     onValidateSchema: (spreadsheetId: String, tabs: Set<String>, onResult: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     onLoadTabs: (spreadsheetId: String, onResult: (Result<List<String>>) -> Unit) -> Unit = { _, onResult -> onResult(Result.success(emptyList())) },
+    onFetchSpreadsheetTitle: suspend (spreadsheetId: String) -> String? = { null },
     onPickSheetFromDrive: () -> Unit = {},
     onSyncFromSpreadsheet: suspend (AppConfig) -> Unit = {}
 ) {
@@ -57,6 +60,8 @@ fun SettingsScreen(
     var isSyncing by remember { mutableStateOf(false) }
     var lastAutoFilledSpreadsheetId by remember { mutableStateOf<String?>(null) }
     var lastLoadedSpreadsheetId by remember { mutableStateOf<String?>(null) }
+    /** Title for the ID currently in the field when it differs from [savedConfig] (not persisted until Save). */
+    var pendingSpreadsheetTitle by remember { mutableStateOf<String?>(null) }
 
     var selectedBriefComments by remember { mutableStateOf(savedConfig.mapBriefCommentFilter) }
     var startDate by remember {
@@ -70,6 +75,12 @@ fun SettingsScreen(
         )
     }
     var selectedQuickRange by remember { mutableStateOf(savedConfig.mapQuickRange) }
+    var oldestRecordsLimitInput by remember {
+        mutableStateOf(savedConfig.mapOldestRecordsLimit?.toString().orEmpty())
+    }
+
+    fun parseOldestRecordsLimitOrNull(value: String): Int? =
+        value.trim().toIntOrNull()?.takeIf { it > 0 }
 
     val quickRangeOptions = remember {
         listOf(
@@ -83,13 +94,20 @@ fun SettingsScreen(
     fun resolvedSpreadsheetIdForPersist(): String =
         normalizeSpreadsheetIdInput(spreadsheetId) ?: savedConfig.spreadsheetId
 
+    fun resolvedSpreadsheetTitleForPersist(): String? =
+        when (normalizeSpreadsheetIdInput(spreadsheetId)) {
+            savedConfig.spreadsheetId -> savedConfig.spreadsheetTitle?.takeIf { it.isNotBlank() }
+            else -> pendingSpreadsheetTitle?.takeIf { it.isNotBlank() }
+        }
+
     fun persistMapFiltersOnly() {
         onUpdateConfig(
             savedConfig.copy(
                 mapBriefCommentFilter = selectedBriefComments,
                 mapDateStartIso = startDate.toString(),
                 mapDateEndIso = endDate.toString(),
-                mapQuickRange = selectedQuickRange
+                mapQuickRange = selectedQuickRange,
+                mapOldestRecordsLimit = parseOldestRecordsLimitOrNull(oldestRecordsLimitInput)
             )
         )
     }
@@ -98,11 +116,13 @@ fun SettingsScreen(
         onUpdateConfig(
             AppConfig(
                 spreadsheetId = resolvedSpreadsheetIdForPersist(),
+                spreadsheetTitle = resolvedSpreadsheetTitleForPersist(),
                 selectedTabs = selectedTabsOverride,
                 mapBriefCommentFilter = selectedBriefComments,
                 mapDateStartIso = startDate.toString(),
                 mapDateEndIso = endDate.toString(),
-                mapQuickRange = selectedQuickRange
+                mapQuickRange = selectedQuickRange,
+                mapOldestRecordsLimit = parseOldestRecordsLimitOrNull(oldestRecordsLimitInput)
             )
         )
     }
@@ -111,9 +131,23 @@ fun SettingsScreen(
         if (savedConfig.spreadsheetId.isBlank()) return@LaunchedEffect
         val canApplySaved =
             spreadsheetId.isBlank() || spreadsheetId == lastAutoFilledSpreadsheetId
+        // #region agent log
+        agentDebugLog(
+            hypothesisId = "D",
+            location = "SettingsScreen.LaunchedEffect(savedConfig.sheet)",
+            message = "saved spreadsheet effect",
+            data = JSONObject().apply {
+                put("savedSpreadsheetId", savedConfig.spreadsheetId)
+                put("fieldSpreadsheetId", spreadsheetId)
+                put("lastAutoFilledSpreadsheetId", lastAutoFilledSpreadsheetId ?: "")
+                put("canApplySaved", canApplySaved)
+            }
+        )
+        // #endregion
         if (canApplySaved) {
             spreadsheetId = savedConfig.spreadsheetId
             selectedTabs = savedConfig.selectedTabs
+            lastAutoFilledSpreadsheetId = savedConfig.spreadsheetId
         }
     }
     LaunchedEffect(savedConfig.selectedTabs) {
@@ -125,12 +159,14 @@ fun SettingsScreen(
         savedConfig.mapDateStartIso,
         savedConfig.mapDateEndIso,
         savedConfig.mapQuickRange,
+        savedConfig.mapOldestRecordsLimit,
         earliestVisitationDate
     ) {
         selectedBriefComments = savedConfig.mapBriefCommentFilter
         startDate = savedConfig.mapDateStartIso?.let { LocalDate.parse(it) } ?: earliestVisitationDate
         endDate = savedConfig.mapDateEndIso?.let { LocalDate.parse(it) } ?: LocalDate.now()
         selectedQuickRange = savedConfig.mapQuickRange
+        oldestRecordsLimitInput = savedConfig.mapOldestRecordsLimit?.toString().orEmpty()
     }
 
     LaunchedEffect(earliestVisitationDate) {
@@ -140,17 +176,36 @@ fun SettingsScreen(
     }
 
     LaunchedEffect(pickedSpreadsheetId) {
-        if (!pickedSpreadsheetId.isNullOrBlank()) {
-            val shouldApplyPickedValue =
-                spreadsheetId.isBlank() || spreadsheetId == lastAutoFilledSpreadsheetId
-            if (shouldApplyPickedValue) {
-                spreadsheetId = pickedSpreadsheetId
-                lastAutoFilledSpreadsheetId = pickedSpreadsheetId
-                status = if (pickedSpreadsheetId.startsWith("content://")) {
-                    "Drive returned a document URI. Paste a Google Sheets URL or raw sheet ID."
-                } else {
-                    "Spreadsheet selected from Drive"
-                }
+        val picked = pickedSpreadsheetId ?: return@LaunchedEffect
+        if (picked.isBlank()) return@LaunchedEffect
+        val pickedNorm = normalizeSpreadsheetIdInput(picked)
+        val currentNorm = normalizeSpreadsheetIdInput(spreadsheetId)
+        val shouldApplyPickedValue =
+            spreadsheetId.isBlank() ||
+                spreadsheetId == lastAutoFilledSpreadsheetId ||
+                (pickedNorm != null && pickedNorm != currentNorm) ||
+                picked.startsWith("content://")
+        // #region agent log
+        agentDebugLog(
+            hypothesisId = "B",
+            location = "SettingsScreen.LaunchedEffect(pickedSpreadsheetId)",
+            message = "drive pick vs field",
+            data = JSONObject().apply {
+                put("picked", picked)
+                put("pickedNorm", pickedNorm ?: JSONObject.NULL)
+                put("currentNorm", currentNorm ?: JSONObject.NULL)
+                put("shouldApplyPickedValue", shouldApplyPickedValue)
+                put("lastAutoFilled", lastAutoFilledSpreadsheetId ?: "")
+            }
+        )
+        // #endregion
+        if (shouldApplyPickedValue) {
+            spreadsheetId = picked
+            lastAutoFilledSpreadsheetId = picked
+            status = if (picked.startsWith("content://")) {
+                "Drive returned a document URI. Paste a Google Sheets URL or raw sheet ID."
+            } else {
+                "Spreadsheet selected from Drive"
             }
         }
     }
@@ -158,13 +213,38 @@ fun SettingsScreen(
         normalizeSpreadsheetIdInput(spreadsheetId)
     }
     LaunchedEffect(normalizedSpreadsheetId) {
+        pendingSpreadsheetTitle = null
         val normalized = normalizedSpreadsheetId
         if (normalized == null) {
             availableZipTabs = emptyList()
             isLoadingTabs = false
             return@LaunchedEffect
         }
-        if (normalized == lastLoadedSpreadsheetId) return@LaunchedEffect
+        if (normalized == lastLoadedSpreadsheetId) {
+            // #region agent log
+            agentDebugLog(
+                hypothesisId = "C",
+                location = "SettingsScreen.LaunchedEffect(normalizedSpreadsheetId)",
+                message = "skip tab load (same as lastLoaded)",
+                data = JSONObject().apply {
+                    put("normalized", normalized)
+                    put("lastLoadedSpreadsheetId", lastLoadedSpreadsheetId ?: "")
+                }
+            )
+            // #endregion
+            return@LaunchedEffect
+        }
+        // #region agent log
+        agentDebugLog(
+            hypothesisId = "C",
+            location = "SettingsScreen.LaunchedEffect(normalizedSpreadsheetId)",
+            message = "will load tabs",
+            data = JSONObject().apply {
+                put("normalized", normalized)
+                put("lastLoadedSpreadsheetId", lastLoadedSpreadsheetId ?: "")
+            }
+        )
+        // #endregion
         isLoadingTabs = true
         onLoadTabs(normalized) { result ->
             result
@@ -180,6 +260,16 @@ fun SettingsScreen(
                     }
                     lastLoadedSpreadsheetId = normalized
                     isLoadingTabs = false
+                    scope.launch {
+                        val title = runCatching { onFetchSpreadsheetTitle(normalized) }.getOrNull()
+                            ?.takeIf { it.isNotBlank() } ?: return@launch
+                        val fieldNorm = normalizeSpreadsheetIdInput(spreadsheetId)
+                        if (fieldNorm == savedConfig.spreadsheetId) {
+                            onUpdateConfig(savedConfig.copy(spreadsheetTitle = title))
+                        } else if (fieldNorm == normalized) {
+                            pendingSpreadsheetTitle = title
+                        }
+                    }
                 }
                 .onFailure {
                     availableZipTabs = emptyList()
@@ -199,8 +289,20 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth(),
             value = spreadsheetId,
             onValueChange = { spreadsheetId = it },
-            label = { Text("Spreadsheet ID") }
+            label = { Text("Spreadsheet ID or URL") }
         )
+        val displaySpreadsheetTitle = when (normalizedSpreadsheetId) {
+            savedConfig.spreadsheetId -> savedConfig.spreadsheetTitle
+            else -> pendingSpreadsheetTitle
+        }
+        if (!displaySpreadsheetTitle.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                displaySpreadsheetTitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Spacer(modifier = Modifier.height(8.dp))
         Text("ZIP codes")
         Spacer(modifier = Modifier.height(4.dp))
@@ -263,6 +365,20 @@ fun SettingsScreen(
                 }
             }
         }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("Oldest N records")
+        Spacer(modifier = Modifier.height(4.dp))
+        OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = oldestRecordsLimitInput,
+            onValueChange = { input ->
+                val digitsOnly = input.filter(Char::isDigit)
+                oldestRecordsLimitInput = digitsOnly
+                persistMapFiltersOnly()
+            },
+            singleLine = true,
+            label = { Text("Leave blank for all") }
+        )
         Spacer(modifier = Modifier.height(8.dp))
         Text("Last visited date range")
         Spacer(modifier = Modifier.height(4.dp))
@@ -348,11 +464,13 @@ fun SettingsScreen(
                     onUpdateConfig(
                         AppConfig(
                             spreadsheetId = normalized,
+                            spreadsheetTitle = resolvedSpreadsheetTitleForPersist(),
                             selectedTabs = selectedTabs,
                             mapBriefCommentFilter = selectedBriefComments,
                             mapDateStartIso = startDate.toString(),
                             mapDateEndIso = endDate.toString(),
-                            mapQuickRange = selectedQuickRange
+                            mapQuickRange = selectedQuickRange,
+                            mapOldestRecordsLimit = parseOldestRecordsLimitOrNull(oldestRecordsLimitInput)
                         )
                     )
                     lastAutoFilledSpreadsheetId = normalized
@@ -382,11 +500,13 @@ fun SettingsScreen(
                         onSyncFromSpreadsheet(
                             AppConfig(
                                 spreadsheetId = normalized,
+                                spreadsheetTitle = resolvedSpreadsheetTitleForPersist(),
                                 selectedTabs = selectedTabs,
                                 mapBriefCommentFilter = selectedBriefComments,
                                 mapDateStartIso = startDate.toString(),
                                 mapDateEndIso = endDate.toString(),
-                                mapQuickRange = selectedQuickRange
+                                mapQuickRange = selectedQuickRange,
+                                mapOldestRecordsLimit = parseOldestRecordsLimitOrNull(oldestRecordsLimitInput)
                             )
                         )
                         lastAutoFilledSpreadsheetId = normalized

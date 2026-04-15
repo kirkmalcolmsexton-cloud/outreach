@@ -36,6 +36,7 @@ import org.outreach.core.model.createHouseholdId
 import org.outreach.core.model.parseSpreadsheetRow
 import org.json.JSONArray
 import org.json.JSONObject
+import org.outreach.debug.agentDebugLog
 import java.io.BufferedReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
@@ -118,6 +119,9 @@ interface OutreachDao {
 
     @Query("SELECT * FROM households WHERE id = :id LIMIT 1")
     suspend fun householdById(id: String): HouseholdEntity?
+
+    @Query("SELECT COUNT(*) FROM households")
+    suspend fun householdRowCount(): Int
 }
 
 @Database(
@@ -141,15 +145,18 @@ class AppConfigStore(context: Context) {
         produceFile = { context.preferencesDataStoreFile("app-config.preferences_pb") }
     )
     private val spreadsheetKey = stringPreferencesKey("spreadsheet_id")
+    private val spreadsheetTitleKey = stringPreferencesKey("spreadsheet_title")
     private val tabsKey = stringPreferencesKey("selected_tabs")
     private val mapBriefFilterKey = stringPreferencesKey("map_brief_filter")
     private val mapDateStartKey = stringPreferencesKey("map_date_start_iso")
     private val mapDateEndKey = stringPreferencesKey("map_date_end_iso")
     private val mapQuickRangeKey = stringPreferencesKey("map_quick_range")
+    private val mapOldestRecordsLimitKey = stringPreferencesKey("map_oldest_records_limit")
 
     val config: Flow<AppConfig> = dataStore.data.map { prefs ->
         AppConfig(
             spreadsheetId = prefs[spreadsheetKey].orEmpty(),
+            spreadsheetTitle = prefs[spreadsheetTitleKey].takeUnless { it.isNullOrBlank() },
             selectedTabs = prefs[tabsKey].orEmpty().split(",").filter { it.isNotBlank() }.toSet(),
             mapBriefCommentFilter = prefs[mapBriefFilterKey].orEmpty()
                 .split(",")
@@ -158,24 +165,42 @@ class AppConfigStore(context: Context) {
                 .toSet(),
             mapDateStartIso = prefs[mapDateStartKey].takeUnless { it.isNullOrBlank() },
             mapDateEndIso = prefs[mapDateEndKey].takeUnless { it.isNullOrBlank() },
-            mapQuickRange = prefs[mapQuickRangeKey].orEmpty().ifBlank { "All" }
+            mapQuickRange = prefs[mapQuickRangeKey].orEmpty().ifBlank { "All" },
+            mapOldestRecordsLimit = prefs[mapOldestRecordsLimitKey]
+                ?.trim()
+                ?.toIntOrNull()
+                ?.takeIf { it > 0 }
         )
     }
 
     suspend fun update(config: AppConfig) {
         dataStore.edit { prefs ->
             prefs[spreadsheetKey] = config.spreadsheetId
+            val title = config.spreadsheetTitle?.trim().orEmpty()
+            if (title.isEmpty()) {
+                prefs.remove(spreadsheetTitleKey)
+            } else {
+                prefs[spreadsheetTitleKey] = title
+            }
             prefs[tabsKey] = config.selectedTabs.joinToString(",")
             prefs[mapBriefFilterKey] = config.mapBriefCommentFilter.joinToString(",")
             prefs[mapDateStartKey] = config.mapDateStartIso.orEmpty()
             prefs[mapDateEndKey] = config.mapDateEndIso.orEmpty()
             prefs[mapQuickRangeKey] = config.mapQuickRange
+            val oldestLimit = config.mapOldestRecordsLimit
+            if (oldestLimit == null || oldestLimit <= 0) {
+                prefs.remove(mapOldestRecordsLimitKey)
+            } else {
+                prefs[mapOldestRecordsLimitKey] = oldestLimit.toString()
+            }
         }
     }
 }
 
 interface SheetsApi {
     suspend fun listTabs(spreadsheetId: String): List<String>
+    /** Spreadsheet document title (file name in Drive / Sheets). */
+    suspend fun getSpreadsheetTitle(spreadsheetId: String): String?
     suspend fun fetchRows(spreadsheetId: String, tabName: String): List<SpreadsheetRowInput>
     suspend fun updateVisit(spreadsheetId: String, update: VisitUpdate)
     suspend fun appendHouseholdRow(
@@ -192,6 +217,7 @@ interface SheetsApi {
 
 class StubSheetsApi : SheetsApi {
     override suspend fun listTabs(spreadsheetId: String): List<String> = listOf("60618", "60657")
+    override suspend fun getSpreadsheetTitle(spreadsheetId: String): String? = "Stub spreadsheet"
     override suspend fun fetchRows(spreadsheetId: String, tabName: String): List<SpreadsheetRowInput> = emptyList()
     override suspend fun updateVisit(spreadsheetId: String, update: VisitUpdate) = Unit
     override suspend fun appendHouseholdRow(
@@ -220,6 +246,17 @@ interface GoogleAccessTokenProvider {
 class GoogleSheetsApi(
     private val tokenProvider: GoogleAccessTokenProvider
 ) : SheetsApi {
+    override suspend fun getSpreadsheetTitle(spreadsheetId: String): String? {
+        val response = request(
+            method = "GET",
+            path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId?fields=properties.title"
+        ) ?: return null
+        return response.optJSONObject("properties")
+            ?.optString("title")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+    }
+
     override suspend fun listTabs(spreadsheetId: String): List<String> {
         val response = request(
             method = "GET",
@@ -522,6 +559,9 @@ class OutreachRepository(
 
     suspend fun availableTabs(spreadsheetId: String): List<String> = sheetsApi.listTabs(spreadsheetId)
 
+    suspend fun fetchSpreadsheetTitle(spreadsheetId: String): String? =
+        sheetsApi.getSpreadsheetTitle(spreadsheetId)
+
     suspend fun loadBriefCommentPresets(): List<String> {
         val cfg = configStore.config.first()
         if (cfg.spreadsheetId.isBlank()) return emptyList()
@@ -537,6 +577,19 @@ class OutreachRepository(
     suspend fun syncFromSheet() {
         val cfg = configStore.config.first()
         if (cfg.spreadsheetId.isBlank() || cfg.selectedTabs.isEmpty()) return
+        // #region agent log
+        val householdRowCountBefore = dao.householdRowCount()
+        agentDebugLog(
+            hypothesisId = "A",
+            location = "OutreachRepository.syncFromSheet:entry",
+            message = "sync start",
+            data = JSONObject().apply {
+                put("spreadsheetId", cfg.spreadsheetId)
+                put("selectedTabs", cfg.selectedTabs.joinToString(","))
+                put("householdRowCountBefore", householdRowCountBefore)
+            }
+        )
+        // #endregion
         val entities = mutableListOf<HouseholdEntity>()
         cfg.selectedTabs.forEach { tab ->
             val rows = sheetsApi.fetchRows(cfg.spreadsheetId, tab)
@@ -560,6 +613,19 @@ class OutreachRepository(
             }
         }
         dao.upsertHouseholds(entities)
+        // #region agent log
+        val householdRowCountAfter = dao.householdRowCount()
+        agentDebugLog(
+            hypothesisId = "A",
+            location = "OutreachRepository.syncFromSheet:afterUpsert",
+            message = "sync upsert complete",
+            data = JSONObject().apply {
+                put("spreadsheetId", cfg.spreadsheetId)
+                put("entitiesBuilt", entities.size)
+                put("householdRowCountAfter", householdRowCountAfter)
+            }
+        )
+        // #endregion
     }
 
     suspend fun saveVisitUpdate(update: VisitUpdate) {

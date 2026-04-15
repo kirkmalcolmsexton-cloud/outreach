@@ -89,6 +89,7 @@ fun MapScreen(
     households: List<HouseholdRecord> = emptyList(),
     visibleZipTabs: Set<String> = emptySet(),
     mapBriefCommentFilter: Set<String> = emptySet(),
+    mapOldestRecordsLimit: Int? = null,
     filterStartDate: LocalDate = LocalDate.now(),
     filterEndDate: LocalDate = LocalDate.now(),
     initialViewportState: MapViewportState? = null,
@@ -145,8 +146,11 @@ fun MapScreen(
             filterEndDate
         )
     }
-    val filteredData = remember(configFiltered, searchQuery) {
+    val searchFiltered = remember(configFiltered, searchQuery) {
         configFiltered.filter { householdMatchesTextSearch(it, searchQuery) }
+    }
+    val filteredData = remember(searchFiltered, mapOldestRecordsLimit) {
+        applyOldestRecordsLimit(searchFiltered, mapOldestRecordsLimit)
     }
     val mapMarkers = remember(filteredData) {
         filteredData.mapNotNull { household ->

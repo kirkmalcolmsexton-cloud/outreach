@@ -50,6 +50,8 @@ data class SpreadsheetRowInput(
 
 data class AppConfig(
     val spreadsheetId: String = "",
+    /** Document title from Google Sheets API; helps confirm which file is selected. */
+    val spreadsheetTitle: String? = null,
     /** ZIP tab names to sync from the sheet and show on the map (multi-select). */
     val selectedTabs: Set<String> = emptySet(),
     val mapBriefCommentFilter: Set<String> = emptySet(),
@@ -57,7 +59,9 @@ data class AppConfig(
     val mapDateStartIso: String? = null,
     /** When null, the map uses today. */
     val mapDateEndIso: String? = null,
-    val mapQuickRange: String = "All"
+    val mapQuickRange: String = "All",
+    /** When null, map/list show all records after other filters. */
+    val mapOldestRecordsLimit: Int? = null
 )
 
 data class VisitUpdate(
