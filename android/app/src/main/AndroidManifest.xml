@@ -8,6 +8,7 @@
         android:name=".OutreachApp"
         android:allowBackup="true"
         android:label="Outreach"
+        android:usesCleartextTraffic="true"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <meta-data

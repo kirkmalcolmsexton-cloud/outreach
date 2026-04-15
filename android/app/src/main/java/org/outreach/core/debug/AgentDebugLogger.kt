@@ -7,7 +7,7 @@ import java.net.URL
 import kotlin.concurrent.thread
 
 private const val DEBUG_ENDPOINT = "http://127.0.0.1:7747/ingest/f7368b29-184e-4539-ae18-cb2344a4388c"
-private const val DEBUG_SESSION_ID = "b12de6"
+private const val DEBUG_SESSION_ID = "d654bf"
 private const val DEBUG_TAG = "OutreachAuthDbg"
 
 object AgentDebugLogger {

@@ -1,6 +1,8 @@
 package org.outreach.feature.settings
 
 import android.app.DatePickerDialog
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,7 +21,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -40,9 +44,11 @@ fun SettingsScreen(
     onUpdateConfig: (AppConfig) -> Unit = {},
     onValidateSchema: (spreadsheetId: String, tabs: Set<String>, onResult: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     onLoadTabs: (spreadsheetId: String, onResult: (Result<List<String>>) -> Unit) -> Unit = { _, onResult -> onResult(Result.success(emptyList())) },
-    onPickSheetFromDrive: () -> Unit = {}
+    onPickSheetFromDrive: () -> Unit = {},
+    onSyncFromSpreadsheet: suspend (AppConfig) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val prettyDateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
     val zipTabPattern = remember { Regex("^\\d{5}(-\\d{4})?$") }
     var spreadsheetId by remember { mutableStateOf("") }
@@ -50,6 +56,7 @@ fun SettingsScreen(
     var availableZipTabs by remember { mutableStateOf<List<String>>(emptyList()) }
     var isLoadingTabs by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Not validated") }
+    var isSyncing by remember { mutableStateOf(false) }
     var lastAutoFilledSpreadsheetId by remember { mutableStateOf<String?>(null) }
     var lastLoadedSpreadsheetId by remember { mutableStateOf<String?>(null) }
 
@@ -192,6 +199,21 @@ fun SettingsScreen(
     }
     LaunchedEffect(normalizedSpreadsheetId) {
         val normalized = normalizedSpreadsheetId
+        // #region agent log
+        if (BuildConfig.DEBUG) {
+            AgentDebugLogger.log(
+                runId = "sheet-switch",
+                hypothesisId = "SS2",
+                location = "SettingsScreen.kt:LaunchedEffect(normalizedSpreadsheetId)",
+                message = "Spreadsheet normalization state changed",
+                data = mapOf(
+                    "rawInputPrefix" to spreadsheetId.take(64),
+                    "normalizedSuffix" to (normalized?.takeLast(6) ?: ""),
+                    "lastLoadedSuffix" to (lastLoadedSpreadsheetId?.takeLast(6) ?: "")
+                )
+            )
+        }
+        // #endregion
         if (normalized == null) {
             availableZipTabs = emptyList()
             isLoadingTabs = false
@@ -213,15 +235,48 @@ fun SettingsScreen(
                     }
                     lastLoadedSpreadsheetId = normalized
                     isLoadingTabs = false
+                    // #region agent log
+                    if (BuildConfig.DEBUG) {
+                        AgentDebugLogger.log(
+                            runId = "sheet-switch",
+                            hypothesisId = "SS3",
+                            location = "SettingsScreen.kt:onLoadTabs.onSuccess",
+                            message = "Loaded tabs for normalized spreadsheet",
+                            data = mapOf(
+                                "normalizedSuffix" to normalized.takeLast(6),
+                                "tabsCount" to tabs.size,
+                                "zipTabsCount" to zipTabs.size,
+                                "zipTabsPreview" to zipTabs.take(8)
+                            )
+                        )
+                    }
+                    // #endregion
                 }
                 .onFailure {
                     availableZipTabs = emptyList()
                     status = "Unable to load tabs. Check spreadsheet access and try again."
                     isLoadingTabs = false
+                    // #region agent log
+                    if (BuildConfig.DEBUG) {
+                        AgentDebugLogger.log(
+                            runId = "sheet-switch",
+                            hypothesisId = "SS4",
+                            location = "SettingsScreen.kt:onLoadTabs.onFailure",
+                            message = "Failed loading tabs for spreadsheet",
+                            data = mapOf(
+                                "normalizedSuffix" to normalized.takeLast(6)
+                            )
+                        )
+                    }
+                    // #endregion
                 }
         }
     }
-    Column(modifier.padding(16.dp)) {
+    Column(
+        modifier = modifier
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
         Text("Configuration")
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(
@@ -413,6 +468,21 @@ fun SettingsScreen(
                     }
                     status = "Could not save: paste a Google Sheets URL (contains /spreadsheets/d/...) or raw Sheet ID."
                 } else {
+                    // #region agent log
+                    if (BuildConfig.DEBUG) {
+                        AgentDebugLogger.log(
+                            runId = "sheet-switch",
+                            hypothesisId = "SS1",
+                            location = "SettingsScreen.kt:SaveSheetConfiguration",
+                            message = "Saving normalized spreadsheet config",
+                            data = mapOf(
+                                "normalizedSuffix" to normalized.takeLast(6),
+                                "previousSuffix" to savedConfig.spreadsheetId.takeLast(6),
+                                "tabsCount" to selectedTabs.size
+                            )
+                        )
+                    }
+                    // #endregion
                     onUpdateConfig(
                         AppConfig(
                             spreadsheetId = normalized,
@@ -429,6 +499,45 @@ fun SettingsScreen(
             }
         ) {
             Text("Save Sheet Configuration")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(
+            enabled = !isSyncing,
+            onClick = {
+                val normalized = normalizeSpreadsheetIdInput(spreadsheetId)
+                if (normalized == null) {
+                    status =
+                        "Could not sync: paste a Google Sheets URL (contains /spreadsheets/d/...) or raw Sheet ID."
+                    return@Button
+                }
+                if (selectedTabs.isEmpty()) {
+                    status = "Select at least one ZIP tab to sync."
+                    return@Button
+                }
+                scope.launch {
+                    isSyncing = true
+                    try {
+                        onSyncFromSpreadsheet(
+                            AppConfig(
+                                spreadsheetId = normalized,
+                                selectedTabs = selectedTabs,
+                                mapBriefCommentFilter = selectedBriefComments,
+                                mapDateStartIso = startDate.toString(),
+                                mapDateEndIso = endDate.toString(),
+                                mapQuickRange = selectedQuickRange
+                            )
+                        )
+                        lastAutoFilledSpreadsheetId = normalized
+                        status = "Synced from spreadsheet"
+                    } catch (e: Exception) {
+                        status = "Sync failed: ${e.message ?: e::class.simpleName}"
+                    } finally {
+                        isSyncing = false
+                    }
+                }
+            }
+        ) {
+            Text(if (isSyncing) "Syncing…" else "Sync from spreadsheet")
         }
         Spacer(modifier = Modifier.height(8.dp))
         Button(

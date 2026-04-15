@@ -317,10 +317,41 @@ private fun OutreachRoot() {
                     if (repository != null) {
                         coroutineScope.launch {
                             val before = repository.config.first()
+                            // #region agent log
+                            if (BuildConfig.DEBUG) {
+                                AgentDebugLogger.log(
+                                    runId = "sheet-switch",
+                                    hypothesisId = "SS1",
+                                    location = "MainActivity.kt:onUpdateConfig.beforeSet",
+                                    message = "Applying updated config from settings",
+                                    data = mapOf(
+                                        "beforeSheetSuffix" to before.spreadsheetId.takeLast(6),
+                                        "afterSheetSuffix" to config.spreadsheetId.takeLast(6),
+                                        "beforeTabsCount" to before.selectedTabs.size,
+                                        "afterTabsCount" to config.selectedTabs.size
+                                    )
+                                )
+                            }
+                            // #endregion
                             repository.setConfig(config)
                             val sheetOrTabsChanged =
                                 config.spreadsheetId != before.spreadsheetId ||
                                     config.selectedTabs != before.selectedTabs
+                            // #region agent log
+                            if (BuildConfig.DEBUG) {
+                                AgentDebugLogger.log(
+                                    runId = "sheet-switch",
+                                    hypothesisId = "SS5",
+                                    location = "MainActivity.kt:onUpdateConfig.afterSet",
+                                    message = "Decided whether to auto-sync after config change",
+                                    data = mapOf(
+                                        "sheetOrTabsChanged" to sheetOrTabsChanged,
+                                        "sheetNonBlank" to config.spreadsheetId.isNotBlank(),
+                                        "tabsNonEmpty" to config.selectedTabs.isNotEmpty()
+                                    )
+                                )
+                            }
+                            // #endregion
                             if (sheetOrTabsChanged &&
                                 config.spreadsheetId.isNotBlank() &&
                                 config.selectedTabs.isNotEmpty()
@@ -405,6 +436,13 @@ private fun OutreachRoot() {
                             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
                     )
+                },
+                onSyncFromSpreadsheet = { config ->
+                    val repository = OutreachServiceLocator.repository
+                        ?: error("Repository not initialized")
+                    repository.setConfig(config)
+                    repository.flushPendingSync()
+                    repository.syncFromSheet()
                 }
             )
             "visits" -> VisitLogScreen(
