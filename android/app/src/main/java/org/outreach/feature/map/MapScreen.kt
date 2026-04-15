@@ -191,12 +191,15 @@ fun MapScreen(
     val mapsApiKey = remember(context) {
         runCatching { context.getString(R.string.google_maps_key) }.getOrDefault("")
     }
+    val spokenNavigationHost = rememberSpokenNavigationHost()
     var routePoints by remember { mutableStateOf<List<LatLng>?>(null) }
+    var routeSpokenInstructions by remember { mutableStateOf<List<String>>(emptyList()) }
     var routeTargetHousehold by remember { mutableStateOf<HouseholdRecord?>(null) }
     var routeLoading by remember { mutableStateOf(false) }
     var routeLoadError by remember { mutableStateOf<String?>(null) }
     var isNavigationActive by remember { mutableStateOf(false) }
     var activeNavigationHouseholdId by remember { mutableStateOf<String?>(null) }
+    var spokenNavigationHouseholdId by remember { mutableStateOf<String?>(null) }
     var pendingRouteHousehold by remember { mutableStateOf<HouseholdRecord?>(null) }
     var activateNavigationAfterPermission by remember { mutableStateOf(false) }
     var localSelectedHouseholdId by remember { mutableStateOf<String?>(null) }
@@ -231,11 +234,13 @@ fun MapScreen(
                         cameraPositionState
                     )
                     result.onSuccess { pts ->
-                        routePoints = pts
+                        routePoints = pts.points
+                        routeSpokenInstructions = pts.spokenInstructions
                         routeTargetHousehold = pending
                         if (activateAfterPermission) {
                             isNavigationActive = true
                             activeNavigationHouseholdId = pending.id
+                            spokenNavigationHouseholdId = null
                         }
                     }.onFailure { e ->
                         routeLoadError = e.message ?: "Route failed"
@@ -292,11 +297,13 @@ fun MapScreen(
                     cameraPositionState
                 )
                 result.onSuccess { pts ->
-                    routePoints = pts
+                    routePoints = pts.points
+                    routeSpokenInstructions = pts.spokenInstructions
                     routeTargetHousehold = household
                     if (activateOnSuccess) {
                         isNavigationActive = true
                         activeNavigationHouseholdId = household.id
+                        spokenNavigationHouseholdId = null
                     }
                 }.onFailure { e ->
                     routeLoadError = e.message ?: "Route failed"
@@ -315,11 +322,26 @@ fun MapScreen(
         val routeId = routeTargetHousehold?.id
         if (routePoints != null && (selectedHouseholdId == null || selectedHouseholdId != routeId)) {
             routePoints = null
+            routeSpokenInstructions = emptyList()
             routeTargetHousehold = null
             routeLoadError = null
             isNavigationActive = false
             activeNavigationHouseholdId = null
+            spokenNavigationHouseholdId = null
+            spokenNavigationHost.stop()
         }
+    }
+
+    LaunchedEffect(isNavigationActive, activeNavigationHouseholdId, routeTargetHousehold, routeSpokenInstructions) {
+        val targetHousehold = routeTargetHousehold
+        if (!isNavigationActive || targetHousehold == null) return@LaunchedEffect
+        if (targetHousehold.id != activeNavigationHouseholdId) return@LaunchedEffect
+        if (spokenNavigationHouseholdId == targetHousehold.id) return@LaunchedEffect
+        spokenNavigationHost.speakRouteStart(
+            destinationLabel = targetHousehold.name,
+            instructions = routeSpokenInstructions
+        )
+        spokenNavigationHouseholdId = targetHousehold.id
     }
 
     LaunchedEffect(mapMarkers, selectedHouseholdId, hasLocationPermission) {
@@ -592,12 +614,15 @@ fun MapScreen(
                     if (isActiveForSelection) {
                         isNavigationActive = false
                         activeNavigationHouseholdId = null
+                        spokenNavigationHouseholdId = null
+                        spokenNavigationHost.stop()
                     } else {
                         val hasCurrentRoute = routeTargetHousehold?.id == household.id &&
                             !routePoints.isNullOrEmpty()
                         if (hasCurrentRoute) {
                             isNavigationActive = true
                             activeNavigationHouseholdId = household.id
+                            spokenNavigationHouseholdId = null
                         } else {
                             requestRouteForHousehold(household, true)
                         }
@@ -672,7 +697,7 @@ private suspend fun loadDrivingRoutePreview(
     household: HouseholdRecord,
     apiKey: String,
     cameraPositionState: CameraPositionState
-): Result<List<LatLng>> {
+): Result<DrivingRoute> {
     val dest = destinationLatLng(context, household)
     if (dest == null) {
         return Result.failure(IllegalArgumentException("Could not resolve destination address."))
@@ -684,8 +709,8 @@ private suspend fun loadDrivingRoutePreview(
         return Result.failure(e)
     } ?: return Result.failure(IllegalStateException("Current location unavailable."))
     val origin = LatLng(loc.latitude, loc.longitude)
-    val routeResult = DirectionsRouteFetcher.fetchDrivingRoute(origin, dest, apiKey)
-    routeResult.onSuccess { points -> fitCameraToRoute(cameraPositionState, points) }
+    val routeResult = DirectionsRouteFetcher.fetchDrivingRouteDetails(origin, dest, apiKey)
+    routeResult.onSuccess { details -> fitCameraToRoute(cameraPositionState, details.points) }
     return routeResult
 }
 

@@ -9,17 +9,22 @@ import java.net.HttpURLConnection
 import java.net.URLEncoder
 import java.net.URL
 
+data class DrivingRoute(
+    val points: List<LatLng>,
+    val spokenInstructions: List<String>
+)
+
 /**
  * Fetches a driving route using the [Directions API](https://developers.google.com/maps/documentation/directions/overview).
  * Requires the same API key as Maps; enable "Directions API" for the key in Google Cloud.
  */
 object DirectionsRouteFetcher {
 
-    suspend fun fetchDrivingRoute(
+    suspend fun fetchDrivingRouteDetails(
         origin: LatLng,
         destination: LatLng,
         apiKey: String
-    ): Result<List<LatLng>> = withContext(Dispatchers.IO) {
+    ): Result<DrivingRoute> = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
             return@withContext Result.failure(IllegalStateException("Maps API key is blank"))
         }
@@ -52,13 +57,46 @@ object DirectionsRouteFetcher {
             if (routes.length() == 0) {
                 return@withContext Result.failure(IllegalStateException("Empty routes"))
             }
-            val overview = routes.getJSONObject(0)
+            val route = routes.getJSONObject(0)
+            val overview = route
                 .getJSONObject("overview_polyline")
                 .getString("points")
             val points = PolyUtil.decode(overview)
-            Result.success(points)
+            val spokenInstructions = extractSpokenInstructions(route)
+            Result.success(DrivingRoute(points = points, spokenInstructions = spokenInstructions))
         } finally {
             conn.disconnect()
         }
+    }
+
+    suspend fun fetchDrivingRoute(
+        origin: LatLng,
+        destination: LatLng,
+        apiKey: String
+    ): Result<List<LatLng>> = fetchDrivingRouteDetails(origin, destination, apiKey).map { it.points }
+
+    private fun extractSpokenInstructions(route: JSONObject): List<String> {
+        val legs = route.optJSONArray("legs") ?: return emptyList()
+        val instructions = mutableListOf<String>()
+        for (legIndex in 0 until legs.length()) {
+            val leg = legs.optJSONObject(legIndex) ?: continue
+            val steps = leg.optJSONArray("steps") ?: continue
+            for (stepIndex in 0 until steps.length()) {
+                val step = steps.optJSONObject(stepIndex) ?: continue
+                val html = step.optString("html_instructions")
+                val distance = step.optJSONObject("distance")?.optString("text").orEmpty()
+                val cleaned = html
+                    .replace(Regex("<[^>]+>"), " ")
+                    .replace("&nbsp;", " ")
+                    .replace("&amp;", "&")
+                    .replace("\\s+".toRegex(), " ")
+                    .trim()
+                if (cleaned.isNotBlank()) {
+                    val combined = if (distance.isNotBlank()) "$cleaned for $distance." else cleaned
+                    instructions += combined
+                }
+            }
+        }
+        return instructions
     }
 }
