@@ -7,6 +7,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -38,6 +41,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.lifecycleScope
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -98,6 +104,7 @@ class MainActivity : ComponentActivity() {
 private fun OutreachRoot() {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    var showStartupScreen by remember { mutableStateOf(true) }
     var showLoginGate by remember { mutableStateOf(false) }
     var screen by remember { mutableStateOf("home") }
     var mapViewMode by remember { mutableStateOf("map") }
@@ -121,6 +128,9 @@ private fun OutreachRoot() {
     var briefCommentPresets by remember { mutableStateOf<List<String>>(emptyList()) }
     var presetsLoading by remember { mutableStateOf(false) }
     var profileMenuExpanded by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        showStartupScreen = false
+    }
     LaunchedEffect(Unit) {
         // #region agent log
         agentDebugLog(
@@ -224,6 +234,10 @@ private fun OutreachRoot() {
         }
     }
     val destinations = listOf("home", "visits", "settings")
+    if (showStartupScreen) {
+        StartupScreen()
+        return
+    }
     if (showLoginGate) {
         LoginGateScreen(onSignedIn = {
             // #region agent log
@@ -696,4 +710,20 @@ private fun normalizeSpreadsheetIdInput(raw: String): String? {
     val fromUrl = Regex("/spreadsheets/d/([a-zA-Z0-9-_]+)").find(trimmed)?.groupValues?.getOrNull(1)
     if (!fromUrl.isNullOrBlank() && isLikelySpreadsheetId(fromUrl)) return fromUrl
     return null
+}
+
+@Composable
+private fun StartupScreen() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        Image(
+            painter = painterResource(id = R.mipmap.ic_launcher),
+            contentDescription = "Startup branding",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+    }
 }

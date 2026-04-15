@@ -11,7 +11,10 @@ import java.net.URL
 
 data class DrivingRoute(
     val points: List<LatLng>,
-    val spokenInstructions: List<String>
+    val spokenInstructions: List<String>,
+    val distanceText: String?,
+    val durationText: String?,
+    val durationSeconds: Int?
 )
 
 /**
@@ -62,8 +65,17 @@ object DirectionsRouteFetcher {
                 .getJSONObject("overview_polyline")
                 .getString("points")
             val points = PolyUtil.decode(overview)
+            val summary = extractRouteSummary(route)
             val spokenInstructions = extractSpokenInstructions(route)
-            Result.success(DrivingRoute(points = points, spokenInstructions = spokenInstructions))
+            Result.success(
+                DrivingRoute(
+                    points = points,
+                    spokenInstructions = spokenInstructions,
+                    distanceText = summary.distanceText,
+                    durationText = summary.durationText,
+                    durationSeconds = summary.durationSeconds
+                )
+            )
         } finally {
             conn.disconnect()
         }
@@ -74,6 +86,39 @@ object DirectionsRouteFetcher {
         destination: LatLng,
         apiKey: String
     ): Result<List<LatLng>> = fetchDrivingRouteDetails(origin, destination, apiKey).map { it.points }
+
+    private data class RouteSummary(
+        val distanceText: String?,
+        val durationText: String?,
+        val durationSeconds: Int?
+    )
+
+    private fun extractRouteSummary(route: JSONObject): RouteSummary {
+        val legs = route.optJSONArray("legs") ?: return RouteSummary(null, null, null)
+        var totalDurationSeconds = 0
+        var hasDuration = false
+        val distancePieces = mutableListOf<String>()
+        val durationPieces = mutableListOf<String>()
+        for (legIndex in 0 until legs.length()) {
+            val leg = legs.optJSONObject(legIndex) ?: continue
+            val distanceObj = leg.optJSONObject("distance")
+            val durationObj = leg.optJSONObject("duration")
+            val durationValue = durationObj?.optInt("value", -1) ?: -1
+            val distanceText = distanceObj?.optString("text").orEmpty().trim()
+            val durationText = durationObj?.optString("text").orEmpty().trim()
+            if (durationValue >= 0) {
+                totalDurationSeconds += durationValue
+                hasDuration = true
+            }
+            if (distanceText.isNotBlank()) distancePieces += distanceText
+            if (durationText.isNotBlank()) durationPieces += durationText
+        }
+        return RouteSummary(
+            distanceText = distancePieces.firstOrNull(),
+            durationText = durationPieces.firstOrNull(),
+            durationSeconds = if (hasDuration) totalDurationSeconds else null
+        )
+    }
 
     private fun extractSpokenInstructions(route: JSONObject): List<String> {
         val legs = route.optJSONArray("legs") ?: return emptyList()

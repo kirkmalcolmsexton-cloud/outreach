@@ -46,6 +46,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -74,6 +76,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.outreach.app.R
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.RawHouseholdRow
@@ -109,6 +112,7 @@ fun MapScreen(
 ) {
     var showAddPersonDialog by remember { mutableStateOf(false) }
     val prettyDateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
+    val etaTimeFormatter = remember { DateTimeFormatter.ofPattern("h:mm a") }
     val context = LocalContext.current
     val hasMapsApiMetadata = remember {
         runCatching {
@@ -194,6 +198,9 @@ fun MapScreen(
     val spokenNavigationHost = rememberSpokenNavigationHost()
     var routePoints by remember { mutableStateOf<List<LatLng>?>(null) }
     var routeSpokenInstructions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var routeDistanceText by remember { mutableStateOf<String?>(null) }
+    var routeDurationText by remember { mutableStateOf<String?>(null) }
+    var routeDurationSeconds by remember { mutableStateOf<Int?>(null) }
     var routeTargetHousehold by remember { mutableStateOf<HouseholdRecord?>(null) }
     var routeLoading by remember { mutableStateOf(false) }
     var routeLoadError by remember { mutableStateOf<String?>(null) }
@@ -236,6 +243,9 @@ fun MapScreen(
                     result.onSuccess { pts ->
                         routePoints = pts.points
                         routeSpokenInstructions = pts.spokenInstructions
+                        routeDistanceText = pts.distanceText
+                        routeDurationText = pts.durationText
+                        routeDurationSeconds = pts.durationSeconds
                         routeTargetHousehold = pending
                         if (activateAfterPermission) {
                             isNavigationActive = true
@@ -244,6 +254,9 @@ fun MapScreen(
                         }
                     }.onFailure { e ->
                         routeLoadError = e.message ?: "Route failed"
+                        routeDistanceText = null
+                        routeDurationText = null
+                        routeDurationSeconds = null
                         if (activateAfterPermission) {
                             isNavigationActive = false
                             activeNavigationHouseholdId = null
@@ -299,6 +312,9 @@ fun MapScreen(
                 result.onSuccess { pts ->
                     routePoints = pts.points
                     routeSpokenInstructions = pts.spokenInstructions
+                    routeDistanceText = pts.distanceText
+                    routeDurationText = pts.durationText
+                    routeDurationSeconds = pts.durationSeconds
                     routeTargetHousehold = household
                     if (activateOnSuccess) {
                         isNavigationActive = true
@@ -307,6 +323,9 @@ fun MapScreen(
                     }
                 }.onFailure { e ->
                     routeLoadError = e.message ?: "Route failed"
+                    routeDistanceText = null
+                    routeDurationText = null
+                    routeDurationSeconds = null
                     if (activateOnSuccess) {
                         isNavigationActive = false
                         activeNavigationHouseholdId = null
@@ -323,6 +342,9 @@ fun MapScreen(
         if (routePoints != null && (selectedHouseholdId == null || selectedHouseholdId != routeId)) {
             routePoints = null
             routeSpokenInstructions = emptyList()
+            routeDistanceText = null
+            routeDurationText = null
+            routeDurationSeconds = null
             routeTargetHousehold = null
             routeLoadError = null
             isNavigationActive = false
@@ -412,6 +434,12 @@ fun MapScreen(
         ?: localSelectedHouseholdId
     val selectedHouseholdForActions = selectedForActionsId?.let { sid ->
         mapMarkers.firstOrNull { (h, _) -> h.id == sid }?.first
+    }
+    val shouldShowRouteDetails = selectedHouseholdForActions?.id != null &&
+        selectedHouseholdForActions.id == routeTargetHousehold?.id &&
+        !routePoints.isNullOrEmpty()
+    val arrivalTimeLabel = routeDurationSeconds?.takeIf { shouldShowRouteDetails && it > 0 }?.let { seconds ->
+        LocalDateTime.now().plusSeconds(seconds.toLong()).format(etaTimeFormatter)
     }
     Box(modifier.fillMaxSize()) {
     Column(
@@ -504,13 +532,51 @@ fun MapScreen(
                             icon = markerDescriptorForBriefComment(household.briefComment),
                             zIndex = if (isSelected) 2f else 0f,
                             onClick = {
-                                localSelectedHouseholdId = if (isSelected) null else household.id
+                                val nextSelectedId = if (isSelected) null else household.id
+                                localSelectedHouseholdId = nextSelectedId
                                 onHouseholdSelected(household)
+                                if (nextSelectedId != null) {
+                                    requestRouteForHousehold(household, false)
+                                }
                                 false
                             },
                             onInfoWindowClick = {
                                 requestRouteForHousehold(household, false)
                             }
+                        )
+                    }
+                }
+            }
+            if (shouldShowRouteDetails) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                        Text(
+                            text = routeDistanceText.orEmpty(),
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Start
+                        )
+                        Text(
+                            text = routeDurationText.orEmpty(),
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = arrivalTimeLabel.orEmpty(),
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.End
                         )
                     }
                 }
