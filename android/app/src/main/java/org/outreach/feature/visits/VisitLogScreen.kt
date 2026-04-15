@@ -25,12 +25,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.normalizeBriefComment
 import org.outreach.feature.map.shareHouseholdLocation
+import org.outreach.ui.testtags.TestTags
 
 private val defaultBriefPresets = listOf(
     "Not home",
@@ -94,7 +96,7 @@ fun VisitLogScreen(
         }
     }
 
-    Column(modifier.padding(16.dp).verticalScroll(scroll)) {
+    Column(modifier.testTag(TestTags.VISITS_ROOT).padding(16.dp).verticalScroll(scroll)) {
         Text("Visit update")
         Spacer(Modifier.height(8.dp))
 
@@ -167,7 +169,8 @@ fun VisitLogScreen(
         val presets = effectivePresets(briefCommentPresets)
         ExposedDropdownMenuBox(
             expanded = dropdownExpanded,
-            onExpandedChange = { dropdownExpanded = !dropdownExpanded }
+            onExpandedChange = { dropdownExpanded = !dropdownExpanded },
+            modifier = Modifier.testTag(TestTags.VISITS_BRIEF)
         ) {
             OutlinedTextField(
                 modifier = Modifier
@@ -222,7 +225,7 @@ fun VisitLogScreen(
 
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().testTag(TestTags.VISITS_NOTES),
             value = notes,
             onValueChange = { notes = it },
             label = { Text("Notes") }
@@ -237,6 +240,7 @@ fun VisitLogScreen(
         val canSave = selectedHousehold != null && briefToSave.isNotBlank()
 
         Button(
+            modifier = Modifier.testTag(TestTags.VISITS_SAVE),
             enabled = canSave,
             onClick = {
                 val id = selectedHousehold?.id ?: return@Button

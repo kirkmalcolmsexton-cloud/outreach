@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
@@ -67,6 +68,8 @@ import org.outreach.feature.map.MapViewportState
 import org.outreach.feature.map.MapScreen
 import org.outreach.feature.settings.SettingsScreen
 import org.outreach.feature.visits.VisitLogScreen
+import org.outreach.app.testing.TestRuntime
+import org.outreach.ui.testtags.TestTags
 import org.json.JSONObject
 import org.outreach.debug.agentDebugLog
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -77,7 +80,9 @@ import java.util.concurrent.TimeUnit
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        scheduleBackgroundSync()
+        if (!TestRuntime.skipStartupSideEffects) {
+            scheduleBackgroundSync()
+        }
         setContent {
             MaterialTheme {
                 OutreachRoot()
@@ -241,24 +246,27 @@ private fun OutreachRoot() {
     }
     val destinations = listOf("home", "visits", "settings")
     if (showStartupScreen) {
-        StartupScreen()
+        StartupScreen(Modifier.testTag(TestTags.STARTUP_SCREEN))
         return
     }
     if (showLoginGate) {
-        LoginGateScreen(onSignedIn = {
-            // #region agent log
-            agentDebugLog(
-                hypothesisId = "U",
-                location = "MainActivity.profileMenu",
-                message = "login completed from profile menu",
-                data = JSONObject()
-            )
-            // #endregion
-            showLoginGate = false
-        })
+        Box(modifier = Modifier.fillMaxSize().testTag(TestTags.LOGIN_GATE)) {
+            LoginGateScreen(onSignedIn = {
+                // #region agent log
+                agentDebugLog(
+                    hypothesisId = "U",
+                    location = "MainActivity.profileMenu",
+                    message = "login completed from profile menu",
+                    data = JSONObject()
+                )
+                // #endregion
+                showLoginGate = false
+            })
+        }
         return
     }
     Scaffold(
+        modifier = Modifier.testTag(TestTags.APP_ROOT),
         topBar = {
             TopAppBar(
                 title = { Text("Outreach") },
@@ -274,12 +282,14 @@ private fun OutreachRoot() {
                                 selected = mapViewMode == "map",
                                 onClick = { mapViewMode = "map" },
                                 shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                                modifier = Modifier.testTag(TestTags.MODE_MAP),
                                 label = { Text("Map") }
                             )
                             SegmentedButton(
                                 selected = mapViewMode == "list",
                                 onClick = { mapViewMode = "list" },
                                 shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                                modifier = Modifier.testTag(TestTags.MODE_LIST),
                                 label = { Text("List") }
                             )
                         }
@@ -366,6 +376,13 @@ private fun OutreachRoot() {
                     NavigationBarItem(
                         selected = screen == destination,
                         onClick = { screen = destination },
+                        modifier = Modifier.testTag(
+                            when (destination) {
+                                "home" -> TestTags.NAV_HOME
+                                "visits" -> TestTags.NAV_VISITS
+                                else -> TestTags.NAV_SETTINGS
+                            }
+                        ),
                         icon = {
                             Icon(
                                 when (destination) {
@@ -395,6 +412,7 @@ private fun OutreachRoot() {
         }
     ) { innerPadding ->
         LaunchedEffect(Unit) {
+            if (TestRuntime.skipStartupSideEffects) return@LaunchedEffect
             syncCoordinator.sync().onFailure { throwable ->
                 syncStatusMessage = "Initial sync failed: ${throwable.message ?: "unknown error"}"
             }
@@ -408,7 +426,10 @@ private fun OutreachRoot() {
         }
         when (screen) {
             "home" -> MapScreen(
-                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .testTag(TestTags.CONTENT_HOME),
                 households = households,
                 visibleZipTabs = savedConfig.selectedTabs,
                 mapBriefCommentMode = savedConfig.mapBriefCommentMode,
@@ -434,7 +455,10 @@ private fun OutreachRoot() {
                 onViewModeChange = { mapViewMode = it }
             )
             "settings" -> SettingsScreen(
-                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .testTag(TestTags.CONTENT_SETTINGS),
                 pickedSpreadsheetId = pickedSpreadsheetId,
                 pickedSpreadsheetDisplayName = pickedSpreadsheetDisplayName,
                 savedConfig = savedConfig,
@@ -559,7 +583,7 @@ private fun OutreachRoot() {
                 }
             )
             "visits" -> VisitLogScreen(
-                modifier = Modifier.padding(innerPadding),
+                modifier = Modifier.padding(innerPadding).testTag(TestTags.CONTENT_VISITS),
                 selectedHousehold = selectedHousehold,
                 briefCommentPresets = briefCommentPresets,
                 presetsLoading = presetsLoading,
@@ -727,11 +751,12 @@ private fun normalizeSpreadsheetIdInput(raw: String): String? {
 }
 
 @Composable
-private fun StartupScreen() {
+private fun StartupScreen(modifier: Modifier = Modifier) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .then(modifier)
     ) {
         Image(
             painter = painterResource(id = R.mipmap.ic_launcher),

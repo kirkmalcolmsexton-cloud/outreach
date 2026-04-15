@@ -8,6 +8,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.outreach.app.testing.TestRuntime
 import org.outreach.core.data.AppConfigStore
 import org.outreach.core.data.CollaborationRepository
 import org.outreach.core.data.GeocodingService
@@ -21,6 +22,9 @@ class OutreachApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        if (TestRuntime.skipStartupSideEffects && OutreachServiceLocator.hasTestOverrides()) {
+            return
+        }
         FirebaseApp.initializeApp(this)
 
         val database = OutreachDatabase.create(this)

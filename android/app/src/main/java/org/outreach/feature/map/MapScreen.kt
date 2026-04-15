@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
@@ -83,6 +84,7 @@ import java.time.format.DateTimeFormatter
 import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.RawHouseholdRow
 import org.outreach.core.model.SourceMetadata
+import org.outreach.ui.testtags.TestTags
 
 data class MapViewportState(
     val latitude: Double,
@@ -446,7 +448,7 @@ fun MapScreen(
     val arrivalTimeLabel = routeDurationSeconds?.takeIf { shouldShowRouteDetails && it > 0 }?.let { seconds ->
         LocalDateTime.now().plusSeconds(seconds.toLong()).format(etaTimeFormatter)
     }
-    Box(modifier.fillMaxSize()) {
+    Box(modifier.fillMaxSize().testTag(TestTags.MAP_ROOT)) {
     Column(
         Modifier
             .fillMaxSize()
@@ -458,7 +460,8 @@ fun MapScreen(
             onValueChange = { searchQuery = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 8.dp),
+                .padding(bottom = 8.dp)
+                .testTag(TestTags.MAP_SEARCH),
             singleLine = true,
             label = { Text("Search name or address") }
         )
@@ -612,7 +615,7 @@ fun MapScreen(
                 )
             }
         } else {
-            LazyColumn {
+            LazyColumn(modifier = Modifier.testTag(TestTags.MAP_LIST)) {
                 items(filteredData) { household ->
                     val isSelected = household.id == selectedHouseholdId
                     Card(
@@ -728,7 +731,10 @@ fun MapScreen(
             ) {
                 Icon(Icons.Filled.Share, contentDescription = "Share household location")
             }
-            SmallFloatingActionButton(onClick = { showAddPersonDialog = true }) {
+            SmallFloatingActionButton(
+                onClick = { showAddPersonDialog = true },
+                modifier = Modifier.testTag(TestTags.MAP_ADD_PERSON)
+            ) {
                 Icon(Icons.Filled.Add, contentDescription = "Add person")
             }
         }

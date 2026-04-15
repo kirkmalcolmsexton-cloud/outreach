@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -42,6 +43,7 @@ import org.json.JSONObject
 import org.outreach.core.model.AppConfig
 import org.outreach.debug.agentDebugLog
 import org.outreach.feature.map.formatBriefComment
+import org.outreach.ui.testtags.TestTags
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -455,6 +457,7 @@ fun SettingsScreen(
     }
     Column(
         modifier = modifier
+            .testTag(TestTags.SETTINGS_ROOT)
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
@@ -508,6 +511,7 @@ fun SettingsScreen(
         ) {
             IconButton(
                 onClick = onPickSheetFromDrive,
+                modifier = Modifier.testTag(TestTags.SETTINGS_PICK_SPREADSHEET),
             ) {
                 Icon(
                     imageVector = Icons.Default.FolderOpen,
@@ -528,6 +532,7 @@ fun SettingsScreen(
                         status = if (valid) "Validated" else "Schema invalid or inaccessible"
                     }
                 },
+                modifier = Modifier.testTag(TestTags.SETTINGS_VALIDATE),
             ) {
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
@@ -572,6 +577,8 @@ fun SettingsScreen(
                         }
                     }
                 }
+                ,
+                modifier = Modifier.testTag(TestTags.SETTINGS_SYNC)
             ) {
                 Icon(
                     imageVector = Icons.Default.Sync,
@@ -614,6 +621,7 @@ fun SettingsScreen(
             availableZipTabs.isEmpty() -> Text("No matching ZIP tabs available.")
             else -> {
                 FlowRow(
+                    modifier = Modifier.testTag(TestTags.SETTINGS_ZIP_SECTION),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {

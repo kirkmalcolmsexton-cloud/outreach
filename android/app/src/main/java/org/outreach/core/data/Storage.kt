@@ -1023,15 +1023,47 @@ class CollaborationRepository(
 
 object OutreachServiceLocator {
     @Volatile
-    var repository: OutreachRepository? = null
-        private set
+    private var defaultRepository: OutreachRepository? = null
 
     @Volatile
-    var collaborationRepository: CollaborationRepository? = null
-        private set
+    private var defaultCollaborationRepository: CollaborationRepository? = null
+
+    @Volatile
+    private var testRepositoryOverride: OutreachRepository? = null
+
+    @Volatile
+    private var testCollaborationRepositoryOverride: CollaborationRepository? = null
+
+    val repository: OutreachRepository?
+        get() = testRepositoryOverride ?: defaultRepository
+
+    val collaborationRepository: CollaborationRepository?
+        get() = testCollaborationRepositoryOverride ?: defaultCollaborationRepository
 
     fun initialize(repository: OutreachRepository, collaborationRepository: CollaborationRepository) {
-        this.repository = repository
-        this.collaborationRepository = collaborationRepository
+        this.defaultRepository = repository
+        this.defaultCollaborationRepository = collaborationRepository
+    }
+
+    fun installTestOverrides(
+        repository: OutreachRepository?,
+        collaborationRepository: CollaborationRepository? = null
+    ) {
+        this.testRepositoryOverride = repository
+        this.testCollaborationRepositoryOverride = collaborationRepository
+    }
+
+    fun clearTestOverrides() {
+        this.testRepositoryOverride = null
+        this.testCollaborationRepositoryOverride = null
+    }
+
+    fun hasTestOverrides(): Boolean =
+        testRepositoryOverride != null || testCollaborationRepositoryOverride != null
+
+    fun resetForTest() {
+        clearTestOverrides()
+        defaultRepository = null
+        defaultCollaborationRepository = null
     }
 }
