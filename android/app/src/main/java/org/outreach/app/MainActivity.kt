@@ -148,14 +148,36 @@ private fun OutreachRoot() {
     val earliestVisitationDate = remember(visitationDates) {
         visitationDates.minOrNull() ?: LocalDate.now()
     }
-    val filterStartDate = remember(savedConfig.mapDateStartIso, earliestVisitationDate) {
-        val fromConfig = savedConfig.mapDateStartIso?.let { LocalDate.parse(it) }
-        maxOf(fromConfig ?: earliestVisitationDate, earliestVisitationDate)
+    val resolvedDateRange = remember(
+        savedConfig.mapQuickRange,
+        savedConfig.mapDateStartIso,
+        savedConfig.mapDateEndIso,
+        earliestVisitationDate
+    ) {
+        fun parseIsoLocalDateOrNull(value: String?): LocalDate? =
+            value?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+
+        val today = LocalDate.now()
+        when (savedConfig.mapQuickRange) {
+            "Today" -> {
+                val start = maxOf(today, earliestVisitationDate)
+                start to maxOf(today, start)
+            }
+            "Yesterday" -> {
+                val yesterday = today.minusDays(1)
+                val start = maxOf(yesterday, earliestVisitationDate)
+                start to maxOf(yesterday, start)
+            }
+            else -> {
+                val startFromConfig = parseIsoLocalDateOrNull(savedConfig.mapDateStartIso)
+                val start = maxOf(startFromConfig ?: earliestVisitationDate, earliestVisitationDate)
+                val endFromConfig = parseIsoLocalDateOrNull(savedConfig.mapDateEndIso)
+                start to maxOf(endFromConfig ?: today, start)
+            }
+        }
     }
-    val filterEndDate = remember(savedConfig.mapDateEndIso, filterStartDate) {
-        val fromConfig = savedConfig.mapDateEndIso?.let { LocalDate.parse(it) }
-        maxOf(fromConfig ?: LocalDate.now(), filterStartDate)
-    }
+    val filterStartDate = resolvedDateRange.first
+    val filterEndDate = resolvedDateRange.second
     val documentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -362,6 +384,7 @@ private fun OutreachRoot() {
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
                 households = households,
                 visibleZipTabs = savedConfig.selectedTabs,
+                mapBriefCommentMode = savedConfig.mapBriefCommentMode,
                 mapBriefCommentFilter = savedConfig.mapBriefCommentFilter,
                 mapOldestRecordsLimit = savedConfig.mapOldestRecordsLimit,
                 filterStartDate = filterStartDate,
@@ -533,6 +556,7 @@ private fun OutreachRoot() {
                 Modifier.padding(innerPadding),
                 households = households,
                 visibleZipTabs = savedConfig.selectedTabs,
+                mapBriefCommentMode = savedConfig.mapBriefCommentMode,
                 mapBriefCommentFilter = savedConfig.mapBriefCommentFilter,
                 mapOldestRecordsLimit = savedConfig.mapOldestRecordsLimit,
                 filterStartDate = filterStartDate,

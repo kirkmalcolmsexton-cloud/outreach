@@ -148,6 +148,7 @@ class AppConfigStore(context: Context) {
     private val spreadsheetKey = stringPreferencesKey("spreadsheet_id")
     private val spreadsheetTitleKey = stringPreferencesKey("spreadsheet_title")
     private val tabsKey = stringPreferencesKey("selected_tabs")
+    private val mapBriefModeKey = stringPreferencesKey("map_brief_mode")
     private val mapBriefFilterKey = stringPreferencesKey("map_brief_filter")
     private val mapDateStartKey = stringPreferencesKey("map_date_start_iso")
     private val mapDateEndKey = stringPreferencesKey("map_date_end_iso")
@@ -159,6 +160,7 @@ class AppConfigStore(context: Context) {
             spreadsheetId = prefs[spreadsheetKey].orEmpty(),
             spreadsheetTitle = prefs[spreadsheetTitleKey].takeUnless { it.isNullOrBlank() },
             selectedTabs = prefs[tabsKey].orEmpty().split(",").filter { it.isNotBlank() }.toSet(),
+            mapBriefCommentMode = prefs[mapBriefModeKey].orEmpty().ifBlank { "include_all" },
             mapBriefCommentFilter = prefs[mapBriefFilterKey].orEmpty()
                 .split(",")
                 .map { it.trim() }
@@ -184,6 +186,7 @@ class AppConfigStore(context: Context) {
                 prefs[spreadsheetTitleKey] = title
             }
             prefs[tabsKey] = config.selectedTabs.joinToString(",")
+            prefs[mapBriefModeKey] = config.mapBriefCommentMode
             prefs[mapBriefFilterKey] = config.mapBriefCommentFilter.joinToString(",")
             prefs[mapDateStartKey] = config.mapDateStartIso.orEmpty()
             prefs[mapDateEndKey] = config.mapDateEndIso.orEmpty()

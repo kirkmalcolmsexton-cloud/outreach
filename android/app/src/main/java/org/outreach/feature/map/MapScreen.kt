@@ -87,6 +87,7 @@ fun MapScreen(
     modifier: Modifier = Modifier,
     households: List<HouseholdRecord> = emptyList(),
     visibleZipTabs: Set<String> = emptySet(),
+    mapBriefCommentMode: String = "include_all",
     mapBriefCommentFilter: Set<String> = emptySet(),
     mapOldestRecordsLimit: Int? = null,
     filterStartDate: LocalDate = LocalDate.now(),
@@ -133,6 +134,7 @@ fun MapScreen(
     val configFiltered = remember(
         data,
         visibleZipTabs,
+        mapBriefCommentMode,
         mapBriefCommentFilter,
         filterStartDate,
         filterEndDate
@@ -140,6 +142,7 @@ fun MapScreen(
         filterHouseholdsForMap(
             data,
             visibleZipTabs,
+            mapBriefCommentMode,
             mapBriefCommentFilter,
             filterStartDate,
             filterEndDate

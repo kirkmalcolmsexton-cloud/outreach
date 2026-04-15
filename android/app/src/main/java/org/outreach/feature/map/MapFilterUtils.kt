@@ -30,6 +30,7 @@ fun householdMatchesTextSearch(household: HouseholdRecord, query: String): Boole
 fun filterHouseholdsForMap(
     data: List<HouseholdRecord>,
     visibleZipTabs: Set<String>,
+    briefCommentMode: String,
     selectedBriefComments: Set<String>,
     startDate: LocalDate,
     endDate: LocalDate
@@ -37,8 +38,10 @@ fun filterHouseholdsForMap(
     return data.filter { household ->
         val tabMatches =
             visibleZipTabs.isEmpty() || household.source.sheetName in visibleZipTabs
-        val briefCommentMatches =
-            selectedBriefComments.isEmpty() || household.briefComment in selectedBriefComments
+        val briefCommentMatches = when (briefCommentMode) {
+            "pick_some" -> household.briefComment in selectedBriefComments
+            else -> true
+        }
         val visitationDate = parseIsoDateOrNull(household.lastVisited)
         val dateMatches = visitationDate == null ||
             (!visitationDate.isBefore(startDate) && !visitationDate.isAfter(endDate))
