@@ -2,6 +2,7 @@ package org.outreach.app
 
 import android.net.Uri
 import android.os.Bundle
+import android.provider.DocumentsContract
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -10,8 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,6 +61,9 @@ import org.outreach.feature.settings.SettingsScreen
 import org.outreach.feature.visits.VisitLogScreen
 import org.json.JSONObject
 import org.outreach.debug.agentDebugLog
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.firebase.auth.FirebaseAuth
 import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
@@ -88,11 +96,13 @@ class MainActivity : ComponentActivity() {
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun OutreachRoot() {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    var loggedIn by remember { mutableStateOf(false) }
+    var showLoginGate by remember { mutableStateOf(false) }
     var screen by remember { mutableStateOf("home") }
     var mapViewMode by remember { mutableStateOf("map") }
     var pickedSpreadsheetId by remember { mutableStateOf<String?>(null) }
+    var pickedSpreadsheetDisplayName by remember { mutableStateOf<String?>(null) }
     var mapViewportState by remember { mutableStateOf<MapViewportState?>(null) }
     val households by (OutreachServiceLocator.repository?.households
         ?: flowOf(emptyList())).collectAsState(initial = emptyList())
@@ -110,6 +120,19 @@ private fun OutreachRoot() {
     }
     var briefCommentPresets by remember { mutableStateOf<List<String>>(emptyList()) }
     var presetsLoading by remember { mutableStateOf(false) }
+    var profileMenuExpanded by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        // #region agent log
+        agentDebugLog(
+            hypothesisId = "NET",
+            location = "OutreachRoot.LaunchedEffect(Unit)",
+            message = "app runtime probe",
+            data = JSONObject().apply {
+                put("showLoginGateInitial", showLoginGate)
+            }
+        )
+        // #endregion
+    }
     LaunchedEffect(savedConfig.spreadsheetId) {
         val repository = OutreachServiceLocator.repository ?: return@LaunchedEffect
         presetsLoading = true
@@ -136,7 +159,7 @@ private fun OutreachRoot() {
     val documentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        val extracted = extractSpreadsheetIdFromUri(uri)
+        val extracted = extractSpreadsheetIdFromUri(context, uri)
         // #region agent log
         agentDebugLog(
             hypothesisId = "B",
@@ -149,15 +172,47 @@ private fun OutreachRoot() {
         )
         // #endregion
         if (extracted != null) {
+            pickedSpreadsheetDisplayName = drivePickerMetadata(context, uri ?: return@rememberLauncherForActivityResult)?.first
             pickedSpreadsheetId = extracted
+        } else if (uri != null) {
+            coroutineScope.launch {
+                val metadata = drivePickerMetadata(context, uri)
+                val resolved = metadata?.let { (displayName, lastModifiedMillis) ->
+                    OutreachServiceLocator.repository
+                        ?.resolveSpreadsheetIdFromDriveMetadata(displayName, lastModifiedMillis)
+                }
+                // #region agent log
+                agentDebugLog(
+                    hypothesisId = "O",
+                    location = "MainActivity.documentLauncher",
+                    message = "drive metadata id resolution",
+                    data = JSONObject().apply {
+                        put("displayName", metadata?.first ?: JSONObject.NULL)
+                        put("lastModifiedMillis", metadata?.second ?: JSONObject.NULL)
+                        put("resolvedId", resolved ?: JSONObject.NULL)
+                    }
+                )
+                // #endregion
+                pickedSpreadsheetDisplayName = metadata?.first
+                pickedSpreadsheetId = resolved ?: uri.toString()
+            }
         } else {
-            pickedSpreadsheetId = uri?.toString()
+            pickedSpreadsheetDisplayName = null
+            pickedSpreadsheetId = null
         }
     }
     val destinations = listOf("home", "visits", "settings")
-    if (!loggedIn) {
+    if (showLoginGate) {
         LoginGateScreen(onSignedIn = {
-            loggedIn = true
+            // #region agent log
+            agentDebugLog(
+                hypothesisId = "U",
+                location = "MainActivity.profileMenu",
+                message = "login completed from profile menu",
+                data = JSONObject()
+            )
+            // #endregion
+            showLoginGate = false
         })
         return
     }
@@ -184,6 +239,79 @@ private fun OutreachRoot() {
                                 onClick = { mapViewMode = "list" },
                                 shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
                                 label = { Text("List") }
+                            )
+                        }
+                    }
+                    val currentUser = FirebaseAuth.getInstance().currentUser
+                    IconButton(onClick = { profileMenuExpanded = true }) {
+                        Icon(
+                            Icons.Default.AccountCircle,
+                            contentDescription = "Profile"
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = profileMenuExpanded,
+                        onDismissRequest = { profileMenuExpanded = false }
+                    ) {
+                        val userLine = currentUser?.email
+                            ?: currentUser?.displayName
+                            ?: "Not logged in"
+                        DropdownMenuItem(
+                            text = { Text(userLine) },
+                            onClick = { profileMenuExpanded = false }
+                        )
+                        if (currentUser == null) {
+                            DropdownMenuItem(
+                                text = { Text("Login") },
+                                onClick = {
+                                    profileMenuExpanded = false
+                                    // #region agent log
+                                    agentDebugLog(
+                                        hypothesisId = "U",
+                                        location = "MainActivity.profileMenu",
+                                        message = "login selected from profile menu",
+                                        data = JSONObject()
+                                    )
+                                    // #endregion
+                                    showLoginGate = true
+                                }
+                            )
+                        } else {
+                            DropdownMenuItem(
+                                text = { Text("Switch profile") },
+                                onClick = {
+                                    profileMenuExpanded = false
+                                    // #region agent log
+                                    agentDebugLog(
+                                        hypothesisId = "U",
+                                        location = "MainActivity.profileMenu",
+                                        message = "switch profile selected",
+                                        data = JSONObject().apply {
+                                            put("email", currentUser.email ?: JSONObject.NULL)
+                                        }
+                                    )
+                                    // #endregion
+                                    signOutCurrentSession(context)
+                                    showLoginGate = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Logout") },
+                                onClick = {
+                                    profileMenuExpanded = false
+                                    // #region agent log
+                                    agentDebugLog(
+                                        hypothesisId = "U",
+                                        location = "MainActivity.profileMenu",
+                                        message = "logout selected",
+                                        data = JSONObject().apply {
+                                            put("email", currentUser.email ?: JSONObject.NULL)
+                                        }
+                                    )
+                                    // #endregion
+                                    signOutCurrentSession(context)
+                                    showLoginGate = false
+                                }
                             )
                         }
                     }
@@ -258,6 +386,7 @@ private fun OutreachRoot() {
             "settings" -> SettingsScreen(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
                 pickedSpreadsheetId = pickedSpreadsheetId,
+                pickedSpreadsheetDisplayName = pickedSpreadsheetDisplayName,
                 savedConfig = savedConfig,
                 briefCommentOptions = briefCommentOptions,
                 earliestVisitationDate = earliestVisitationDate,
@@ -306,11 +435,42 @@ private fun OutreachRoot() {
                 onLoadTabs = { spreadsheetId, onResult ->
                     val normalizedSpreadsheetId = normalizeSpreadsheetIdInput(spreadsheetId)
                     val repository = OutreachServiceLocator.repository
+                    // #region agent log
+                    agentDebugLog(
+                        hypothesisId = "J",
+                        location = "MainActivity.onLoadTabs",
+                        message = "load tabs request",
+                        data = JSONObject().apply {
+                            put("inputSpreadsheetId", spreadsheetId)
+                            put("normalizedSpreadsheetId", normalizedSpreadsheetId ?: JSONObject.NULL)
+                            put("repositoryPresent", repository != null)
+                        }
+                    )
+                    // #endregion
                     if (repository != null && normalizedSpreadsheetId != null) {
                         coroutineScope.launch {
                             val loadedTabs = runCatching {
                                 repository.availableTabs(normalizedSpreadsheetId)
                             }
+                            // #region agent log
+                            agentDebugLog(
+                                hypothesisId = "J",
+                                location = "MainActivity.onLoadTabs",
+                                message = "load tabs result",
+                                data = JSONObject().apply {
+                                    put("normalizedSpreadsheetId", normalizedSpreadsheetId)
+                                    put("success", loadedTabs.isSuccess)
+                                    put(
+                                        "error",
+                                        loadedTabs.exceptionOrNull()?.message ?: JSONObject.NULL
+                                    )
+                                    put(
+                                        "tabsSample",
+                                        loadedTabs.getOrNull()?.take(10)?.joinToString("|") ?: ""
+                                    )
+                                }
+                            )
+                            // #endregion
                             onResult(loadedTabs)
                         }
                     } else {
@@ -398,7 +558,15 @@ private fun OutreachRoot() {
     }
 }
 
-private fun extractSpreadsheetIdFromUri(uri: Uri?): String? {
+private fun signOutCurrentSession(context: android.content.Context) {
+    runCatching { FirebaseAuth.getInstance().signOut() }
+    val signInOptions = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).build()
+    runCatching {
+        GoogleSignIn.getClient(context, signInOptions).signOut()
+    }
+}
+
+private fun extractSpreadsheetIdFromUri(context: android.content.Context, uri: Uri?): String? {
     if (uri == null) return null
     val full = uri.toString()
     val regex = Regex("/spreadsheets/d/([a-zA-Z0-9-_]+)")
@@ -410,7 +578,88 @@ private fun extractSpreadsheetIdFromUri(uri: Uri?): String? {
         .substringAfterLast('/')
         .substringAfterLast(':')
         .trim()
-    return candidate.takeIf { isLikelySpreadsheetId(it) }
+    if (isLikelySpreadsheetId(candidate)) return candidate
+    val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+    val metadataPairs = mutableListOf<Pair<String, String>>()
+    runCatching {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                for (i in 0 until cursor.columnCount) {
+                    val key = cursor.getColumnName(i).orEmpty()
+                    val value = cursor.getString(i).orEmpty()
+                    if (key.isNotBlank() && value.isNotBlank()) metadataPairs += key to value
+                }
+            }
+        }
+    }
+    val metadataCandidates = buildList {
+        if (!documentId.isNullOrBlank()) add(documentId)
+        addAll(metadataPairs.map { it.second })
+    }
+    val fromMetadata = metadataCandidates
+        .asSequence()
+        .mapNotNull { normalizeSpreadsheetIdInput(it) }
+        .firstOrNull()
+    // #region agent log
+    agentDebugLog(
+        hypothesisId = "N",
+        location = "MainActivity.extractSpreadsheetIdFromUri",
+        message = "drive uri metadata probe",
+        data = JSONObject().apply {
+            put("uriScheme", uri.scheme ?: "")
+            put("documentId", documentId ?: JSONObject.NULL)
+            put(
+                "metadataSample",
+                metadataPairs.take(8).joinToString("|") { "${it.first}=${it.second.take(80)}" }
+            )
+            put("fromMetadata", fromMetadata ?: JSONObject.NULL)
+        }
+    )
+    // #endregion
+    if (!fromMetadata.isNullOrBlank()) return fromMetadata
+    // #region agent log
+    agentDebugLog(
+        hypothesisId = "K",
+        location = "MainActivity.extractSpreadsheetIdFromUri",
+        message = "uri extraction candidates",
+        data = JSONObject().apply {
+            put("uriScheme", uri.scheme ?: "")
+            put("matchedFromSheetsPath", match ?: JSONObject.NULL)
+            put("matchedFromQueryId", fromQuery ?: JSONObject.NULL)
+            put("matchedFromLastSegment", candidate.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
+            put("matchedFromEncodedDoc", JSONObject.NULL)
+        }
+    )
+    // #endregion
+    return null
+}
+
+private fun drivePickerMetadata(context: android.content.Context, uri: Uri): Pair<String, Long?>? {
+    var displayName: String? = null
+    var lastModifiedMillis: Long? = null
+    runCatching {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                for (i in 0 until cursor.columnCount) {
+                    val key = cursor.getColumnName(i).orEmpty()
+                    val value = cursor.getString(i).orEmpty()
+                    if (displayName == null &&
+                        (key == "_display_name" || key.equals("display_name", ignoreCase = true))
+                    ) {
+                        displayName = value.takeIf { it.isNotBlank() }
+                    }
+                    if (lastModifiedMillis == null &&
+                        (key == "last_modified" || key.equals("lastModified", ignoreCase = true))
+                    ) {
+                        lastModifiedMillis = value.toLongOrNull()
+                    }
+                }
+            }
+        }
+    }
+    val name = displayName?.trim().orEmpty()
+    if (name.isBlank()) return null
+    return name to lastModifiedMillis
 }
 
 private fun isLikelySpreadsheetId(value: String): Boolean =

@@ -38,6 +38,7 @@ import org.outreach.feature.map.formatBriefComment
 fun SettingsScreen(
     modifier: Modifier = Modifier,
     pickedSpreadsheetId: String? = null,
+    pickedSpreadsheetDisplayName: String? = null,
     savedConfig: AppConfig = AppConfig(),
     briefCommentOptions: List<String> = emptyList(),
     earliestVisitationDate: LocalDate = LocalDate.now(),
@@ -62,6 +63,7 @@ fun SettingsScreen(
     var lastLoadedSpreadsheetId by remember { mutableStateOf<String?>(null) }
     /** Title for the ID currently in the field when it differs from [savedConfig] (not persisted until Save). */
     var pendingSpreadsheetTitle by remember { mutableStateOf<String?>(null) }
+    var pendingDisplayNameFromPicker by remember { mutableStateOf<String?>(null) }
 
     var selectedBriefComments by remember { mutableStateOf(savedConfig.mapBriefCommentFilter) }
     var startDate by remember {
@@ -129,8 +131,10 @@ fun SettingsScreen(
 
     LaunchedEffect(savedConfig.spreadsheetId, savedConfig.selectedTabs) {
         if (savedConfig.spreadsheetId.isBlank()) return@LaunchedEffect
+        val savedLooksLikeDocToken = looksLikeDriveDocToken(savedConfig.spreadsheetId)
         val canApplySaved =
-            spreadsheetId.isBlank() || spreadsheetId == lastAutoFilledSpreadsheetId
+            (spreadsheetId.isBlank() || spreadsheetId == lastAutoFilledSpreadsheetId) &&
+                !savedLooksLikeDocToken
         // #region agent log
         agentDebugLog(
             hypothesisId = "D",
@@ -140,6 +144,7 @@ fun SettingsScreen(
                 put("savedSpreadsheetId", savedConfig.spreadsheetId)
                 put("fieldSpreadsheetId", spreadsheetId)
                 put("lastAutoFilledSpreadsheetId", lastAutoFilledSpreadsheetId ?: "")
+                put("savedLooksLikeDocToken", savedLooksLikeDocToken)
                 put("canApplySaved", canApplySaved)
             }
         )
@@ -148,6 +153,18 @@ fun SettingsScreen(
             spreadsheetId = savedConfig.spreadsheetId
             selectedTabs = savedConfig.selectedTabs
             lastAutoFilledSpreadsheetId = savedConfig.spreadsheetId
+        } else if (savedLooksLikeDocToken && spreadsheetId.isBlank()) {
+            // #region agent log
+            agentDebugLog(
+                hypothesisId = "M",
+                location = "SettingsScreen.LaunchedEffect(savedConfig.sheet)",
+                message = "skip autofill for suspicious saved id",
+                data = JSONObject().apply {
+                    put("savedSpreadsheetId", savedConfig.spreadsheetId)
+                }
+            )
+            // #endregion
+            status = "Saved spreadsheet ID looks invalid. Paste a Google Sheets URL or raw sheet ID."
         }
     }
     LaunchedEffect(savedConfig.selectedTabs) {
@@ -179,12 +196,42 @@ fun SettingsScreen(
         val picked = pickedSpreadsheetId ?: return@LaunchedEffect
         if (picked.isBlank()) return@LaunchedEffect
         val pickedNorm = normalizeSpreadsheetIdInput(picked)
+        if (!pickedSpreadsheetDisplayName.isNullOrBlank()) {
+            pendingDisplayNameFromPicker = pickedSpreadsheetDisplayName
+            // #region agent log
+            agentDebugLog(
+                hypothesisId = "P",
+                location = "SettingsScreen.LaunchedEffect(pickedSpreadsheetId)",
+                message = "picked display name applied",
+                data = JSONObject().apply {
+                    put("pickedNorm", pickedNorm ?: JSONObject.NULL)
+                    put("pickedSpreadsheetDisplayName", pickedSpreadsheetDisplayName)
+                }
+            )
+            // #endregion
+        }
         val currentNorm = normalizeSpreadsheetIdInput(spreadsheetId)
+        if (picked.startsWith("content://") && pickedNorm == null) {
+            // #region agent log
+            agentDebugLog(
+                hypothesisId = "L",
+                location = "SettingsScreen.LaunchedEffect(pickedSpreadsheetId)",
+                message = "ignore unresolved content uri",
+                data = JSONObject().apply {
+                    put("picked", picked)
+                    put("fieldBefore", spreadsheetId)
+                    put("currentNorm", currentNorm ?: JSONObject.NULL)
+                }
+            )
+            // #endregion
+            status =
+                "Drive selection could not resolve a Sheet ID. Enable Google Drive API for the app's project or paste a Google Sheets URL/raw sheet ID."
+            return@LaunchedEffect
+        }
         val shouldApplyPickedValue =
             spreadsheetId.isBlank() ||
                 spreadsheetId == lastAutoFilledSpreadsheetId ||
-                (pickedNorm != null && pickedNorm != currentNorm) ||
-                picked.startsWith("content://")
+                (pickedNorm != null && pickedNorm != currentNorm)
         // #region agent log
         agentDebugLog(
             hypothesisId = "B",
@@ -200,18 +247,30 @@ fun SettingsScreen(
         )
         // #endregion
         if (shouldApplyPickedValue) {
-            spreadsheetId = picked
-            lastAutoFilledSpreadsheetId = picked
-            status = if (picked.startsWith("content://")) {
-                "Drive returned a document URI. Paste a Google Sheets URL or raw sheet ID."
-            } else {
-                "Spreadsheet selected from Drive"
-            }
+            val nextSpreadsheetId = pickedNorm ?: picked
+            spreadsheetId = nextSpreadsheetId
+            lastAutoFilledSpreadsheetId = nextSpreadsheetId
+            status = "Spreadsheet selected from Drive"
         }
     }
     val normalizedSpreadsheetId = remember(spreadsheetId) {
         normalizeSpreadsheetIdInput(spreadsheetId)
     }
+    // #region agent log
+    LaunchedEffect(normalizedSpreadsheetId, savedConfig.spreadsheetId, savedConfig.spreadsheetTitle) {
+        agentDebugLog(
+            hypothesisId = "F",
+            location = "SettingsScreen.displaySpreadsheetTitle",
+            message = "display title inputs",
+            data = JSONObject().apply {
+                put("normalizedSpreadsheetId", normalizedSpreadsheetId ?: JSONObject.NULL)
+                put("savedSpreadsheetId", savedConfig.spreadsheetId)
+                put("savedSpreadsheetTitle", savedConfig.spreadsheetTitle ?: JSONObject.NULL)
+                put("pendingSpreadsheetTitle", pendingSpreadsheetTitle ?: JSONObject.NULL)
+            }
+        )
+    }
+    // #endregion
     LaunchedEffect(normalizedSpreadsheetId) {
         pendingSpreadsheetTitle = null
         val normalized = normalizedSpreadsheetId
@@ -253,6 +312,20 @@ fun SettingsScreen(
                         .map { it.trim() }
                         .filter { it.matches(zipTabPattern) }
                         .sorted()
+                    // #region agent log
+                    agentDebugLog(
+                        hypothesisId = "I",
+                        location = "SettingsScreen.onLoadTabs.onSuccess",
+                        message = "tabs loaded and filtered",
+                        data = JSONObject().apply {
+                            put("normalizedSpreadsheetId", normalized)
+                            put("rawTabsCount", tabs.size)
+                            put("zipTabsCount", zipTabs.size)
+                            put("rawTabsSample", tabs.take(10).joinToString("|"))
+                            put("zipTabsSample", zipTabs.take(10).joinToString("|"))
+                        }
+                    )
+                    // #endregion
                     availableZipTabs = zipTabs
                     selectedTabs = selectedTabs.filterTo(mutableSetOf()) { it in zipTabs }
                     if (zipTabs.isEmpty()) {
@@ -261,9 +334,38 @@ fun SettingsScreen(
                     lastLoadedSpreadsheetId = normalized
                     isLoadingTabs = false
                     scope.launch {
-                        val title = runCatching { onFetchSpreadsheetTitle(normalized) }.getOrNull()
-                            ?.takeIf { it.isNotBlank() } ?: return@launch
+                        val titleResult = runCatching { onFetchSpreadsheetTitle(normalized) }
+                        val title = titleResult.getOrNull()?.takeIf { it.isNotBlank() }
+                        // #region agent log
+                        agentDebugLog(
+                            hypothesisId = "G",
+                            location = "SettingsScreen.fetchSpreadsheetTitle",
+                            message = "title fetch finished",
+                            data = JSONObject().apply {
+                                put("normalized", normalized)
+                                put("title", title ?: JSONObject.NULL)
+                                put("titleFetchSucceeded", titleResult.isSuccess)
+                                put(
+                                    "titleFetchError",
+                                    titleResult.exceptionOrNull()?.message ?: JSONObject.NULL
+                                )
+                            }
+                        )
+                        // #endregion
+                        if (title == null) return@launch
                         val fieldNorm = normalizeSpreadsheetIdInput(spreadsheetId)
+                        // #region agent log
+                        agentDebugLog(
+                            hypothesisId = "H",
+                            location = "SettingsScreen.titleRouting",
+                            message = "title target branch",
+                            data = JSONObject().apply {
+                                put("fieldNorm", fieldNorm ?: JSONObject.NULL)
+                                put("savedSpreadsheetId", savedConfig.spreadsheetId)
+                                put("normalized", normalized)
+                            }
+                        )
+                        // #endregion
                         if (fieldNorm == savedConfig.spreadsheetId) {
                             onUpdateConfig(savedConfig.copy(spreadsheetTitle = title))
                         } else if (fieldNorm == normalized) {
@@ -272,6 +374,16 @@ fun SettingsScreen(
                     }
                 }
                 .onFailure {
+                    // #region agent log
+                    agentDebugLog(
+                        hypothesisId = "I",
+                        location = "SettingsScreen.onLoadTabs.onFailure",
+                        message = "tabs load failed",
+                        data = JSONObject().apply {
+                            put("normalizedSpreadsheetId", normalized)
+                        }
+                    )
+                    // #endregion
                     availableZipTabs = emptyList()
                     status = "Unable to load tabs. Check spreadsheet access and try again."
                     isLoadingTabs = false
@@ -293,7 +405,7 @@ fun SettingsScreen(
         )
         val displaySpreadsheetTitle = when (normalizedSpreadsheetId) {
             savedConfig.spreadsheetId -> savedConfig.spreadsheetTitle
-            else -> pendingSpreadsheetTitle
+        else -> pendingSpreadsheetTitle ?: pendingDisplayNameFromPicker
         }
         if (!displaySpreadsheetTitle.isNullOrBlank()) {
             Spacer(modifier = Modifier.height(4.dp))
@@ -408,7 +520,7 @@ fun SettingsScreen(
                 )
             }
         }
-        Row(modifier = Modifier.padding(top = 8.dp)) {
+        Column(modifier = Modifier.padding(top = 8.dp)) {
             FilterChip(
                 selected = false,
                 onClick = {
@@ -429,8 +541,9 @@ fun SettingsScreen(
                     ).show()
                 },
                 label = { Text("Start: ${startDate.format(prettyDateFormatter)}") },
-                modifier = Modifier.padding(end = 8.dp)
+                modifier = Modifier.fillMaxWidth()
             )
+            Spacer(modifier = Modifier.height(8.dp))
             FilterChip(
                 selected = false,
                 onClick = {
@@ -451,7 +564,7 @@ fun SettingsScreen(
                     ).show()
                 },
                 label = { Text("End: ${endDate.format(prettyDateFormatter)}") },
-                modifier = Modifier.padding(end = 8.dp)
+                modifier = Modifier.fillMaxWidth()
             )
         }
         Spacer(modifier = Modifier.height(16.dp))
@@ -552,4 +665,9 @@ private fun normalizeSpreadsheetIdInput(raw: String): String? {
     if (trimmed.matches(Regex("^[a-zA-Z0-9-_]{20,}$"))) return trimmed
     val fromUrl = Regex("/spreadsheets/d/([a-zA-Z0-9-_]+)").find(trimmed)?.groupValues?.getOrNull(1)
     return fromUrl?.takeIf { it.matches(Regex("^[a-zA-Z0-9-_]{20,}$")) }
+}
+
+private fun looksLikeDriveDocToken(value: String): Boolean {
+    val trimmed = value.trim()
+    return trimmed.matches(Regex("^[a-zA-Z0-9-_]{56,}$")) && !trimmed.startsWith("1")
 }

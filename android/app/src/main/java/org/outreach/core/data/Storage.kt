@@ -41,6 +41,7 @@ import java.io.BufferedReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.Instant
 import java.time.LocalDate
 
 @Entity(tableName = "households")
@@ -213,6 +214,11 @@ interface SheetsApi {
     suspend fun validateRequiredHeaders(spreadsheetId: String, tabName: String): Boolean
     /** Allowed brief-comment labels from the `keys` tab [Name] column; empty if tab/column missing. */
     suspend fun fetchBriefCommentPresets(spreadsheetId: String): List<String>
+    /** Resolve a spreadsheet ID from Drive metadata when picker returns a content URI. */
+    suspend fun resolveSpreadsheetIdFromDriveMetadata(
+        displayName: String,
+        lastModifiedMillis: Long?
+    ): String?
 }
 
 class StubSheetsApi : SheetsApi {
@@ -237,6 +243,10 @@ class StubSheetsApi : SheetsApi {
         "Dawat saath",
         "Other"
     )
+    override suspend fun resolveSpreadsheetIdFromDriveMetadata(
+        displayName: String,
+        lastModifiedMillis: Long?
+    ): String? = null
 }
 
 interface GoogleAccessTokenProvider {
@@ -246,6 +256,110 @@ interface GoogleAccessTokenProvider {
 class GoogleSheetsApi(
     private val tokenProvider: GoogleAccessTokenProvider
 ) : SheetsApi {
+    override suspend fun resolveSpreadsheetIdFromDriveMetadata(
+        displayName: String,
+        lastModifiedMillis: Long?
+    ): String? {
+        val safeName = displayName.trim().replace("'", "\\'")
+        if (safeName.isBlank()) return null
+        val q = "name='$safeName' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false"
+        val encodedQ = java.net.URLEncoder.encode(q, "UTF-8")
+        val path =
+            "https://www.googleapis.com/drive/v3/files" +
+                "?q=$encodedQ&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=50" +
+                "&includeItemsFromAllDrives=true&supportsAllDrives=true"
+        val response = request(method = "GET", path = path)
+        val files = response?.optJSONArray("files") ?: JSONArray()
+        if (files.length() == 0) {
+            val fallbackPath =
+                "https://www.googleapis.com/drive/v3/files" +
+                    "?q=" + java.net.URLEncoder.encode(
+                        "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+                        "UTF-8"
+                    ) +
+                    "&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=200" +
+                    "&includeItemsFromAllDrives=true&supportsAllDrives=true"
+            val fallback = request(method = "GET", path = fallbackPath)
+            val fallbackFiles = fallback?.optJSONArray("files") ?: JSONArray()
+            // #region agent log
+            agentDebugLog(
+                hypothesisId = "S",
+                location = "GoogleSheetsApi.resolveSpreadsheetIdFromDriveMetadata",
+                message = "fallback drive list query result",
+                data = JSONObject().apply {
+                    put("displayName", displayName)
+                    put("fallbackFilesCount", fallbackFiles.length())
+                }
+            )
+            // #endregion
+            if (fallbackFiles.length() > 0) {
+                return pickBestSpreadsheetId(fallbackFiles, displayName, lastModifiedMillis)
+            }
+        }
+        // #region agent log
+        agentDebugLog(
+            hypothesisId = "Q",
+            location = "GoogleSheetsApi.resolveSpreadsheetIdFromDriveMetadata",
+            message = "drive files query result",
+            data = JSONObject().apply {
+                put("displayName", displayName)
+                put("lastModifiedMillis", lastModifiedMillis ?: JSONObject.NULL)
+                put("filesCount", files.length())
+                put(
+                    "filesSample",
+                    buildList {
+                        for (i in 0 until minOf(5, files.length())) {
+                            val file = files.optJSONObject(i) ?: continue
+                            add(
+                                "${file.optString("id")}:${file.optString("name")}:${file.optString("modifiedTime")}"
+                            )
+                        }
+                    }.joinToString("|")
+                )
+            }
+        )
+        // #endregion
+        if (files.length() == 0) return null
+        return pickBestSpreadsheetId(files, displayName, lastModifiedMillis)
+    }
+
+    private fun pickBestSpreadsheetId(
+        files: JSONArray,
+        displayName: String,
+        lastModifiedMillis: Long?
+    ): String? {
+        val normalizedTarget = displayName.trim().lowercase()
+        var bestId: String? = null
+        var bestScore = Int.MIN_VALUE
+        var bestDiff = Long.MAX_VALUE
+        for (i in 0 until files.length()) {
+            val file = files.optJSONObject(i) ?: continue
+            val id = file.optString("id").takeIf { it.isNotBlank() } ?: continue
+            val name = file.optString("name").trim()
+            val normalizedName = name.lowercase()
+            val score = when {
+                normalizedName == normalizedTarget -> 3
+                normalizedName.contains(normalizedTarget) -> 2
+                normalizedTarget.contains(normalizedName) -> 1
+                else -> 0
+            }
+            if (score == 0) continue
+            val modified = file.optString("modifiedTime").takeIf { it.isNotBlank() }
+            val diff = if (modified != null && lastModifiedMillis != null) {
+                val modifiedMillis = runCatching { Instant.parse(modified).toEpochMilli() }.getOrNull()
+                if (modifiedMillis != null) kotlin.math.abs(modifiedMillis - lastModifiedMillis) else Long.MAX_VALUE
+            } else {
+                Long.MAX_VALUE
+            }
+            if (score > bestScore || (score == bestScore && diff < bestDiff)) {
+                bestScore = score
+                bestDiff = diff
+                bestId = id
+            }
+        }
+        return bestId ?: files.optJSONObject(0)?.optString("id")?.takeIf { it.isNotBlank() }
+    }
+
     override suspend fun getSpreadsheetTitle(spreadsheetId: String): String? {
         val response = request(
             method = "GET",
@@ -415,10 +529,36 @@ class GoogleSheetsApi(
     }
 
     private suspend fun request(method: String, path: String, body: JSONObject? = null): JSONObject? {
-        val token = tokenProvider.getAccessToken(
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive.file"
-        ) ?: return null
+        val requestedScopes = if (path.contains("www.googleapis.com/drive/v3/files")) {
+            // Request only Drive metadata scopes for Drive file lookup calls.
+            arrayOf(
+                "https://www.googleapis.com/auth/drive.metadata.readonly",
+                "https://www.googleapis.com/auth/drive.file"
+            )
+        } else {
+            arrayOf(
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive.file"
+            )
+        }
+        val token = tokenProvider.getAccessToken(*requestedScopes)
+        if (token == null) {
+            if (path.contains("www.googleapis.com/drive/v3/files")) {
+                // #region agent log
+                agentDebugLog(
+                    hypothesisId = "T",
+                    location = "GoogleSheetsApi.request",
+                    message = "missing access token for drive request",
+                    data = JSONObject().apply {
+                        put("method", method)
+                        put("requestedScopes", requestedScopes.joinToString(" "))
+                        put("path", path.take(200))
+                    }
+                )
+                // #endregion
+            }
+            return null
+        }
         return withContext(Dispatchers.IO) {
             val connection = URL(path).openConnection() as HttpURLConnection
             connection.requestMethod = method
@@ -434,7 +574,40 @@ class GoogleSheetsApi(
             val payload = if (code in 200..299) {
                 BufferedReader(connection.inputStream.reader()).use { it.readText() }
             } else {
+                if (path.contains("www.googleapis.com/drive/v3/files")) {
+                    val errorPayload = runCatching {
+                        connection.errorStream?.bufferedReader()?.use { it.readText() }
+                    }.getOrNull().orEmpty()
+                    // #region agent log
+                    agentDebugLog(
+                        hypothesisId = "R",
+                        location = "GoogleSheetsApi.request",
+                        message = "drive files request failed",
+                        data = JSONObject().apply {
+                            put("method", method)
+                            put("code", code)
+                            put("path", path.take(200))
+                            put("errorSample", errorPayload.take(300))
+                        }
+                    )
+                    // #endregion
+                }
                 return@withContext null
+            }
+            if (path.contains("www.googleapis.com/drive/v3/files")) {
+                // #region agent log
+                agentDebugLog(
+                    hypothesisId = "R",
+                    location = "GoogleSheetsApi.request",
+                    message = "drive files request ok",
+                    data = JSONObject().apply {
+                        put("method", method)
+                        put("code", code)
+                        put("path", path.take(200))
+                        put("payloadSample", payload.take(300))
+                    }
+                )
+                // #endregion
             }
             if (payload.isBlank()) null else JSONObject(payload)
         }
@@ -561,6 +734,11 @@ class OutreachRepository(
 
     suspend fun fetchSpreadsheetTitle(spreadsheetId: String): String? =
         sheetsApi.getSpreadsheetTitle(spreadsheetId)
+
+    suspend fun resolveSpreadsheetIdFromDriveMetadata(
+        displayName: String,
+        lastModifiedMillis: Long?
+    ): String? = sheetsApi.resolveSpreadsheetIdFromDriveMetadata(displayName, lastModifiedMillis)
 
     suspend fun loadBriefCommentPresets(): List<String> {
         val cfg = configStore.config.first()

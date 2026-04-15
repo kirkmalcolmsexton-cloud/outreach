@@ -31,6 +31,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.Scope
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.GoogleAuthProvider
@@ -47,8 +48,9 @@ fun LoginGateScreen(onSignedIn: () -> Unit) {
     val viewModel = remember { AuthViewModel(FirebaseAuth.getInstance()) }
     val session by viewModel.session.collectAsState()
     val errorMessage by viewModel.error.collectAsState()
-    LaunchedEffect(session) {
-        if (session) {
+    val hasRequiredScopes = viewModel.hasRequiredGoogleScopes(context)
+    LaunchedEffect(session, hasRequiredScopes) {
+        if (session && hasRequiredScopes) {
             onSignedIn()
         }
     }
@@ -67,11 +69,18 @@ fun LoginGateScreen(onSignedIn: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        if (session) {
+        if (session && hasRequiredScopes) {
             Text("Signing you in...")
             return@Column
         }
-        Text("Sign in with Google SSO")
+        if (session && !hasRequiredScopes) {
+            Text("Google Drive permission needed")
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Continue once to grant Drive access for picker-based sheet selection.")
+            Spacer(modifier = Modifier.height(8.dp))
+        } else {
+            Text("Sign in with Google SSO")
+        }
         if (errorMessage.isNotBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(errorMessage)
@@ -95,6 +104,11 @@ fun LoginGateScreen(onSignedIn: () -> Unit) {
 class AuthViewModel(
     private val auth: FirebaseAuth
 ) : ViewModel() {
+    private val requiredScopes = arrayOf(
+        Scope("https://www.googleapis.com/auth/spreadsheets"),
+        Scope("https://www.googleapis.com/auth/drive.file"),
+        Scope("https://www.googleapis.com/auth/drive.metadata.readonly")
+    )
     private val _session = MutableStateFlow(auth.currentUser != null)
     val session: StateFlow<Boolean> = _session.asStateFlow()
     private val _error = MutableStateFlow("")
@@ -109,12 +123,14 @@ class AuthViewModel(
         val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
             .requestIdToken(webClientId)
-            .requestScopes(
-                com.google.android.gms.common.api.Scope("https://www.googleapis.com/auth/spreadsheets"),
-                com.google.android.gms.common.api.Scope("https://www.googleapis.com/auth/drive.file")
-            )
+            .requestScopes(requiredScopes.first(), *requiredScopes.drop(1).toTypedArray())
             .build()
         return GoogleSignIn.getClient(context, options).signInIntent
+    }
+
+    fun hasRequiredGoogleScopes(context: Context): Boolean {
+        val account = GoogleSignIn.getLastSignedInAccount(context) ?: return false
+        return GoogleSignIn.hasPermissions(account, *requiredScopes)
     }
 
     fun setMissingWebClientIdError() {
