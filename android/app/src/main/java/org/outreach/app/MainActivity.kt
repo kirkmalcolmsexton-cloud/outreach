@@ -3,6 +3,7 @@ package org.outreach.app
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,6 +24,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -30,6 +32,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,12 +49,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -70,12 +73,19 @@ import org.outreach.feature.settings.SettingsScreen
 import org.outreach.feature.visits.VisitLogScreen
 import org.outreach.app.testing.TestRuntime
 import org.outreach.ui.testtags.TestTags
-import org.json.JSONObject
-import org.outreach.debug.agentDebugLog
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.firebase.auth.FirebaseAuth
 import java.util.concurrent.TimeUnit
+
+private data class MockDriveSpreadsheet(
+    val id: String,
+    val displayName: String
+)
+
+private fun shouldUseMockDrivePickerOnThisDevice(): Boolean {
+    return BuildConfig.DEBUG && TestRuntime.isAutomation
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -117,6 +127,15 @@ private fun OutreachRoot() {
     var mapViewMode by remember { mutableStateOf("map") }
     var pickedSpreadsheetId by remember { mutableStateOf<String?>(null) }
     var pickedSpreadsheetDisplayName by remember { mutableStateOf<String?>(null) }
+    var showMockDrivePicker by remember { mutableStateOf(false) }
+    val mockDriveSpreadsheets = remember {
+        listOf(
+            MockDriveSpreadsheet(
+                id = "sample-drive-sheet-001",
+                displayName = "Sample Outreach Households"
+            )
+        )
+    }
     var mapViewportState by remember { mutableStateOf<MapViewportState?>(null) }
     val households by (OutreachServiceLocator.repository?.households
         ?: flowOf(emptyList())).collectAsState(initial = emptyList())
@@ -140,19 +159,8 @@ private fun OutreachRoot() {
         RepositorySyncCoordinator { OutreachServiceLocator.repository }
     }
     LaunchedEffect(Unit) {
+        delay(1200)
         showStartupScreen = false
-    }
-    LaunchedEffect(Unit) {
-        // #region agent log
-        agentDebugLog(
-            hypothesisId = "NET",
-            location = "OutreachRoot.LaunchedEffect(Unit)",
-            message = "app runtime probe",
-            data = JSONObject().apply {
-                put("showLoginGateInitial", showLoginGate)
-            }
-        )
-        // #endregion
     }
     LaunchedEffect(savedConfig.spreadsheetId) {
         val repository = OutreachServiceLocator.repository ?: return@LaunchedEffect
@@ -203,17 +211,6 @@ private fun OutreachRoot() {
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         val extracted = extractSpreadsheetIdFromUri(context, uri)
-        // #region agent log
-        agentDebugLog(
-            hypothesisId = "B",
-            location = "MainActivity.documentLauncher",
-            message = "drive pick result",
-            data = JSONObject().apply {
-                put("extracted", extracted ?: JSONObject.NULL)
-                put("uriScheme", uri?.scheme ?: "")
-            }
-        )
-        // #endregion
         if (extracted != null) {
             pickedSpreadsheetDisplayName = drivePickerMetadata(context, uri ?: return@rememberLauncherForActivityResult)?.first
             pickedSpreadsheetId = extracted
@@ -224,20 +221,8 @@ private fun OutreachRoot() {
                     OutreachServiceLocator.repository
                         ?.resolveSpreadsheetIdFromDriveMetadata(displayName, lastModifiedMillis)
                 }
-                // #region agent log
-                agentDebugLog(
-                    hypothesisId = "O",
-                    location = "MainActivity.documentLauncher",
-                    message = "drive metadata id resolution",
-                    data = JSONObject().apply {
-                        put("displayName", metadata?.first ?: JSONObject.NULL)
-                        put("lastModifiedMillis", metadata?.second ?: JSONObject.NULL)
-                        put("resolvedId", resolved ?: JSONObject.NULL)
-                    }
-                )
-                // #endregion
                 pickedSpreadsheetDisplayName = metadata?.first
-                pickedSpreadsheetId = resolved ?: uri.toString()
+                pickedSpreadsheetId = resolved
             }
         } else {
             pickedSpreadsheetDisplayName = null
@@ -252,14 +237,6 @@ private fun OutreachRoot() {
     if (showLoginGate) {
         Box(modifier = Modifier.fillMaxSize().testTag(TestTags.LOGIN_GATE)) {
             LoginGateScreen(onSignedIn = {
-                // #region agent log
-                agentDebugLog(
-                    hypothesisId = "U",
-                    location = "MainActivity.profileMenu",
-                    message = "login completed from profile menu",
-                    data = JSONObject()
-                )
-                // #endregion
                 showLoginGate = false
             })
         }
@@ -317,14 +294,6 @@ private fun OutreachRoot() {
                                 text = { Text("Login") },
                                 onClick = {
                                     profileMenuExpanded = false
-                                    // #region agent log
-                                    agentDebugLog(
-                                        hypothesisId = "U",
-                                        location = "MainActivity.profileMenu",
-                                        message = "login selected from profile menu",
-                                        data = JSONObject()
-                                    )
-                                    // #endregion
                                     showLoginGate = true
                                 }
                             )
@@ -333,16 +302,6 @@ private fun OutreachRoot() {
                                 text = { Text("Switch profile") },
                                 onClick = {
                                     profileMenuExpanded = false
-                                    // #region agent log
-                                    agentDebugLog(
-                                        hypothesisId = "U",
-                                        location = "MainActivity.profileMenu",
-                                        message = "switch profile selected",
-                                        data = JSONObject().apply {
-                                            put("email", currentUser.email ?: JSONObject.NULL)
-                                        }
-                                    )
-                                    // #endregion
                                     signOutCurrentSession(context)
                                     showLoginGate = true
                                 }
@@ -351,16 +310,6 @@ private fun OutreachRoot() {
                                 text = { Text("Logout") },
                                 onClick = {
                                     profileMenuExpanded = false
-                                    // #region agent log
-                                    agentDebugLog(
-                                        hypothesisId = "U",
-                                        location = "MainActivity.profileMenu",
-                                        message = "logout selected",
-                                        data = JSONObject().apply {
-                                            put("email", currentUser.email ?: JSONObject.NULL)
-                                        }
-                                    )
-                                    // #endregion
                                     signOutCurrentSession(context)
                                     showLoginGate = false
                                 }
@@ -469,27 +418,24 @@ private fun OutreachRoot() {
                     if (repository != null) {
                         coroutineScope.launch {
                             val before = repository.config.first()
-                            // #region agent log
                             val sheetOrTabsChanged =
                                 config.spreadsheetId != before.spreadsheetId ||
                                     config.selectedTabs != before.selectedTabs
-                            agentDebugLog(
-                                hypothesisId = "E",
-                                location = "MainActivity.onUpdateConfig",
-                                message = "config update",
-                                data = JSONObject().apply {
-                                    put("beforeSpreadsheetId", before.spreadsheetId)
-                                    put("afterSpreadsheetId", config.spreadsheetId)
-                                    put("sheetOrTabsChanged", sheetOrTabsChanged)
-                                }
-                            )
-                            // #endregion
                             repository.setConfig(config)
                             if (sheetOrTabsChanged &&
                                 config.spreadsheetId.isNotBlank() &&
                                 config.selectedTabs.isNotEmpty()
                             ) {
-                                repository.syncFromSheet()
+                                runCatching { repository.syncFromSheet() }
+                                    .onFailure { e ->
+                                        Log.e(
+                                            "OutreachSync",
+                                            "syncFromSheet failed after spreadsheet/config change",
+                                            e
+                                        )
+                                        syncStatusMessage =
+                                            "Sync failed: ${e.message ?: e::class.simpleName}"
+                                    }
                             }
                         }
                     }
@@ -509,42 +455,11 @@ private fun OutreachRoot() {
                 onLoadTabs = { spreadsheetId, onResult ->
                     val normalizedSpreadsheetId = normalizeSpreadsheetIdInput(spreadsheetId)
                     val repository = OutreachServiceLocator.repository
-                    // #region agent log
-                    agentDebugLog(
-                        hypothesisId = "J",
-                        location = "MainActivity.onLoadTabs",
-                        message = "load tabs request",
-                        data = JSONObject().apply {
-                            put("inputSpreadsheetId", spreadsheetId)
-                            put("normalizedSpreadsheetId", normalizedSpreadsheetId ?: JSONObject.NULL)
-                            put("repositoryPresent", repository != null)
-                        }
-                    )
-                    // #endregion
                     if (repository != null && normalizedSpreadsheetId != null) {
                         coroutineScope.launch {
                             val loadedTabs = runCatching {
                                 repository.availableTabs(normalizedSpreadsheetId)
                             }
-                            // #region agent log
-                            agentDebugLog(
-                                hypothesisId = "J",
-                                location = "MainActivity.onLoadTabs",
-                                message = "load tabs result",
-                                data = JSONObject().apply {
-                                    put("normalizedSpreadsheetId", normalizedSpreadsheetId)
-                                    put("success", loadedTabs.isSuccess)
-                                    put(
-                                        "error",
-                                        loadedTabs.exceptionOrNull()?.message ?: JSONObject.NULL
-                                    )
-                                    put(
-                                        "tabsSample",
-                                        loadedTabs.getOrNull()?.take(10)?.joinToString("|") ?: ""
-                                    )
-                                }
-                            )
-                            // #endregion
                             onResult(loadedTabs)
                         }
                     } else {
@@ -555,31 +470,25 @@ private fun OutreachRoot() {
                     OutreachServiceLocator.repository?.fetchSpreadsheetTitle(spreadsheetId)
                 },
                 onPickSheetFromDrive = {
-                    documentLauncher.launch(
-                        arrayOf(
-                            "application/vnd.google-apps.spreadsheet",
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    if (shouldUseMockDrivePickerOnThisDevice()) {
+                        showMockDrivePicker = true
+                    } else {
+                        documentLauncher.launch(
+                            arrayOf(
+                                "application/vnd.google-apps.spreadsheet",
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
                         )
-                    )
+                    }
                 },
                 onSyncFromSpreadsheet = { config ->
-                    // #region agent log
-                    agentDebugLog(
-                        hypothesisId = "E",
-                        location = "MainActivity.onSyncFromSpreadsheet",
-                        message = "manual sync",
-                        data = JSONObject().apply {
-                            put("spreadsheetId", config.spreadsheetId)
-                            put("selectedTabsCount", config.selectedTabs.size)
+                    syncCoordinator.sync(config)
+                        .onSuccess { syncStatusMessage = null }
+                        .onFailure { e ->
+                            Log.e("OutreachSync", "manual sync failed", e)
+                            syncStatusMessage =
+                                "Sync failed: ${e.message ?: "unknown error"}"
                         }
-                    )
-                    // #endregion
-                    syncCoordinator.sync(config).onFailure { throwable ->
-                        syncStatusMessage = "Sync failed: ${throwable.message ?: "unknown error"}"
-                        throw throwable
-                    }.onSuccess {
-                        syncStatusMessage = null
-                    }
                 }
             )
             "visits" -> VisitLogScreen(
@@ -632,6 +541,33 @@ private fun OutreachRoot() {
             )
         }
     }
+    if (showMockDrivePicker) {
+        AlertDialog(
+            onDismissRequest = { showMockDrivePicker = false },
+            title = { Text("Mock Google Drive") },
+            text = {
+                androidx.compose.foundation.layout.Column {
+                    mockDriveSpreadsheets.forEach { file ->
+                        TextButton(
+                            onClick = {
+                                pickedSpreadsheetId = file.id
+                                pickedSpreadsheetDisplayName = file.displayName
+                                showMockDrivePicker = false
+                            }
+                        ) {
+                            Text(file.displayName)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showMockDrivePicker = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 private fun signOutCurrentSession(context: android.content.Context) {
@@ -676,37 +612,7 @@ private fun extractSpreadsheetIdFromUri(context: android.content.Context, uri: U
         .asSequence()
         .mapNotNull { normalizeSpreadsheetIdInput(it) }
         .firstOrNull()
-    // #region agent log
-    agentDebugLog(
-        hypothesisId = "N",
-        location = "MainActivity.extractSpreadsheetIdFromUri",
-        message = "drive uri metadata probe",
-        data = JSONObject().apply {
-            put("uriScheme", uri.scheme ?: "")
-            put("documentId", documentId ?: JSONObject.NULL)
-            put(
-                "metadataSample",
-                metadataPairs.take(8).joinToString("|") { "${it.first}=${it.second.take(80)}" }
-            )
-            put("fromMetadata", fromMetadata ?: JSONObject.NULL)
-        }
-    )
-    // #endregion
     if (!fromMetadata.isNullOrBlank()) return fromMetadata
-    // #region agent log
-    agentDebugLog(
-        hypothesisId = "K",
-        location = "MainActivity.extractSpreadsheetIdFromUri",
-        message = "uri extraction candidates",
-        data = JSONObject().apply {
-            put("uriScheme", uri.scheme ?: "")
-            put("matchedFromSheetsPath", match ?: JSONObject.NULL)
-            put("matchedFromQueryId", fromQuery ?: JSONObject.NULL)
-            put("matchedFromLastSegment", candidate.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
-            put("matchedFromEncodedDoc", JSONObject.NULL)
-        }
-    )
-    // #endregion
     return null
 }
 
@@ -752,6 +658,7 @@ private fun normalizeSpreadsheetIdInput(raw: String): String? {
 
 @Composable
 private fun StartupScreen(modifier: Modifier = Modifier) {
+    val startupPainter = painterResource(id = R.drawable.startup_landing)
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -759,7 +666,7 @@ private fun StartupScreen(modifier: Modifier = Modifier) {
             .then(modifier)
     ) {
         Image(
-            painter = painterResource(id = R.mipmap.ic_launcher),
+            painter = startupPainter,
             contentDescription = "Startup branding",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop

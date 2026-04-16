@@ -10,6 +10,13 @@ object TestRuntime {
         }.getOrDefault(false)
     }
 
+    private val isRobolectric: Boolean by lazy {
+        Build.FINGERPRINT.lowercase().contains("robolectric")
+    }
+
+    val isAutomation: Boolean
+        get() = isInstrumentation || isRobolectric
+
     val skipStartupSideEffects: Boolean
-        get() = isInstrumentation || Build.FINGERPRINT.lowercase().contains("robolectric")
+        get() = isAutomation
 }

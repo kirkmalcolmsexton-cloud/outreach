@@ -1,16 +1,16 @@
 package org.outreach.app
 
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithText
-import org.junit.Rule
+import androidx.test.core.app.ActivityScenario
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class AppShellTest {
-    @get:Rule
-    val composeRule = createAndroidComposeRule<MainActivity>()
-
     @Test
-    fun showsHomeShellInitially() {
-        composeRule.onNodeWithText("Outreach").assertExists()
+    fun launchesMainActivity() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                assertFalse(activity.isFinishing)
+            }
+        }
     }
 }

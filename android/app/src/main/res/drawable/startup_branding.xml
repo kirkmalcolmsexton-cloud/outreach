@@ -6,6 +6,6 @@
             android:antialias="true"
             android:dither="true"
             android:gravity="fill"
-            android:src="@mipmap/ic_launcher" />
+            android:src="@drawable/startup_landing" />
     </item>
 </layer-list>

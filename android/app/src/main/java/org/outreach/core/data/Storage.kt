@@ -38,7 +38,6 @@ import org.outreach.core.model.createHouseholdId
 import org.outreach.core.model.parseSpreadsheetRow
 import org.json.JSONArray
 import org.json.JSONObject
-import org.outreach.debug.agentDebugLog
 import java.io.BufferedReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
@@ -140,6 +139,25 @@ abstract class OutreachDatabase : RoomDatabase() {
     abstract fun dao(): OutreachDao
 
     companion object {
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE households ADD COLUMN assignedTo TEXT"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS pending_append (
+                        householdId TEXT NOT NULL PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        streetAddress TEXT NOT NULL,
+                        neighborhood TEXT NOT NULL,
+                        sheetName TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // Version 4 locks in explicit migration path instead of destructive fallback.
@@ -149,7 +167,7 @@ abstract class OutreachDatabase : RoomDatabase() {
 
         fun create(context: Context): OutreachDatabase =
             Room.databaseBuilder(context, OutreachDatabase::class.java, "outreach.db")
-                .addMigrations(MIGRATION_3_4)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }
@@ -269,6 +287,19 @@ interface GoogleAccessTokenProvider {
     suspend fun getAccessToken(vararg scopes: String): String?
 }
 
+data class GoogleApiEndpoints(
+    val driveBaseUrl: String = "https://www.googleapis.com",
+    val sheetsBaseUrl: String = "https://sheets.googleapis.com"
+)
+
+fun interface UrlConnectionFactory {
+    fun open(path: String): HttpURLConnection
+}
+
+private val defaultUrlConnectionFactory = UrlConnectionFactory { path ->
+    URL(path).openConnection() as HttpURLConnection
+}
+
 sealed interface SheetsRequestResult {
     data class Success(val body: JSONObject?) : SheetsRequestResult
     data class Failure(val code: Int?, val message: String) : SheetsRequestResult
@@ -281,6 +312,12 @@ internal fun SheetsRequestResult.bodyOrThrow(): JSONObject? = when (this) {
     )
 }
 
+/** Same as [bodyOrThrow] but returns null on failure (e.g. missing token) instead of throwing. */
+internal fun SheetsRequestResult.bodyOrNull(): JSONObject? = when (this) {
+    is SheetsRequestResult.Success -> body
+    is SheetsRequestResult.Failure -> null
+}
+
 internal fun sortEpochForLastVisited(lastVisited: String?, now: LocalDate = LocalDate.now()): Long {
     return lastVisited
         ?.let { value -> runCatching { LocalDate.parse(value) }.getOrNull() }
@@ -289,7 +326,9 @@ internal fun sortEpochForLastVisited(lastVisited: String?, now: LocalDate = Loca
 }
 
 class GoogleSheetsApi(
-    private val tokenProvider: GoogleAccessTokenProvider
+    private val tokenProvider: GoogleAccessTokenProvider,
+    private val endpoints: GoogleApiEndpoints = GoogleApiEndpoints(),
+    private val connectionFactory: UrlConnectionFactory = defaultUrlConnectionFactory
 ) : SheetsApi {
     override suspend fun resolveSpreadsheetIdFromDriveMetadata(
         displayName: String,
@@ -300,60 +339,26 @@ class GoogleSheetsApi(
         val q = "name='$safeName' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false"
         val encodedQ = java.net.URLEncoder.encode(q, "UTF-8")
         val path =
-            "https://www.googleapis.com/drive/v3/files" +
+            "${endpoints.driveBaseUrl.trimEnd('/')}/drive/v3/files" +
                 "?q=$encodedQ&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=50" +
                 "&includeItemsFromAllDrives=true&supportsAllDrives=true"
-        val response = request(method = "GET", path = path).bodyOrThrow()
-        val files = response?.optJSONArray("files") ?: JSONArray()
+        val response = request(method = "GET", path = path).bodyOrNull() ?: return null
+        val files = response.optJSONArray("files") ?: JSONArray()
         if (files.length() == 0) {
             val fallbackPath =
-                "https://www.googleapis.com/drive/v3/files" +
+                "${endpoints.driveBaseUrl.trimEnd('/')}/drive/v3/files" +
                     "?q=" + java.net.URLEncoder.encode(
                         "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
                         "UTF-8"
                     ) +
                     "&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=200" +
                     "&includeItemsFromAllDrives=true&supportsAllDrives=true"
-            val fallback = request(method = "GET", path = fallbackPath).bodyOrThrow()
-            val fallbackFiles = fallback?.optJSONArray("files") ?: JSONArray()
-            // #region agent log
-            agentDebugLog(
-                hypothesisId = "S",
-                location = "GoogleSheetsApi.resolveSpreadsheetIdFromDriveMetadata",
-                message = "fallback drive list query result",
-                data = JSONObject().apply {
-                    put("displayName", displayName)
-                    put("fallbackFilesCount", fallbackFiles.length())
-                }
-            )
-            // #endregion
+            val fallback = request(method = "GET", path = fallbackPath).bodyOrNull() ?: return null
+            val fallbackFiles = fallback.optJSONArray("files") ?: JSONArray()
             if (fallbackFiles.length() > 0) {
                 return pickBestSpreadsheetId(fallbackFiles, displayName, lastModifiedMillis)
             }
         }
-        // #region agent log
-        agentDebugLog(
-            hypothesisId = "Q",
-            location = "GoogleSheetsApi.resolveSpreadsheetIdFromDriveMetadata",
-            message = "drive files query result",
-            data = JSONObject().apply {
-                put("displayName", displayName)
-                put("lastModifiedMillis", lastModifiedMillis ?: JSONObject.NULL)
-                put("filesCount", files.length())
-                put(
-                    "filesSample",
-                    buildList {
-                        for (i in 0 until minOf(5, files.length())) {
-                            val file = files.optJSONObject(i) ?: continue
-                            add(
-                                "${file.optString("id")}:${file.optString("name")}:${file.optString("modifiedTime")}"
-                            )
-                        }
-                    }.joinToString("|")
-                )
-            }
-        )
-        // #endregion
         if (files.length() == 0) return null
         return pickBestSpreadsheetId(files, displayName, lastModifiedMillis)
     }
@@ -398,7 +403,7 @@ class GoogleSheetsApi(
     override suspend fun getSpreadsheetTitle(spreadsheetId: String): String? {
         val response = request(
             method = "GET",
-            path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId?fields=properties.title"
+            path = "${endpoints.sheetsBaseUrl.trimEnd('/')}/v4/spreadsheets/$spreadsheetId?fields=properties.title"
         ).bodyOrThrow() ?: return null
         return response.optJSONObject("properties")
             ?.optString("title")
@@ -409,7 +414,7 @@ class GoogleSheetsApi(
     override suspend fun listTabs(spreadsheetId: String): List<String> {
         val response = request(
             method = "GET",
-            path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId?fields=sheets.properties.title"
+            path = "${endpoints.sheetsBaseUrl.trimEnd('/')}/v4/spreadsheets/$spreadsheetId?fields=sheets.properties.title"
         ).bodyOrThrow() ?: return emptyList()
         val sheets = response.optJSONArray("sheets") ?: JSONArray()
         return buildList {
@@ -428,7 +433,7 @@ class GoogleSheetsApi(
         val encodedRange = java.net.URLEncoder.encode("$tabName!A:Z", "UTF-8")
         val response = request(
             method = "GET",
-            path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
+            path = "${endpoints.sheetsBaseUrl.trimEnd('/')}/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
         ).bodyOrThrow() ?: return emptyList()
         val values = response.optJSONArray("values") ?: JSONArray()
         if (values.length() <= 1) return emptyList()
@@ -482,7 +487,7 @@ class GoogleSheetsApi(
         )
         request(
             method = "POST",
-            path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values:batchUpdate",
+            path = "${endpoints.sheetsBaseUrl.trimEnd('/')}/v4/spreadsheets/$spreadsheetId/values:batchUpdate",
             body = body
         ).bodyOrThrow()
     }
@@ -508,7 +513,7 @@ class GoogleSheetsApi(
         }
         val encodedRange = java.net.URLEncoder.encode("$tabName!A:Z", "UTF-8")
         val path =
-            "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values/$encodedRange:append" +
+            "${endpoints.sheetsBaseUrl.trimEnd('/')}/v4/spreadsheets/$spreadsheetId/values/$encodedRange:append" +
                 "?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS"
         val inner = JSONArray()
         row.forEach { inner.put(it) }
@@ -526,7 +531,7 @@ class GoogleSheetsApi(
         val encodedRange = java.net.URLEncoder.encode("${GoogleSheetsApi.KEYS_TAB_NAME}!A:Z", "UTF-8")
         val response = request(
             method = "GET",
-            path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
+            path = "${endpoints.sheetsBaseUrl.trimEnd('/')}/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
         ).bodyOrThrow() ?: return emptyList()
         val values = response.optJSONArray("values") ?: return emptyList()
         if (values.length() == 0) return emptyList()
@@ -549,7 +554,7 @@ class GoogleSheetsApi(
         val encodedRange = java.net.URLEncoder.encode("$tabName!1:1", "UTF-8")
         val response = request(
             method = "GET",
-            path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
+            path = "${endpoints.sheetsBaseUrl.trimEnd('/')}/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
         ).bodyOrThrow() ?: return false
         val rows = response.optJSONArray("values") ?: return false
         val headers = rows.optJSONArray(0)
@@ -564,7 +569,7 @@ class GoogleSheetsApi(
     }
 
     private suspend fun request(method: String, path: String, body: JSONObject? = null): SheetsRequestResult {
-        val requestedScopes = if (path.contains("www.googleapis.com/drive/v3/files")) {
+        val requestedScopes = if (path.contains("/drive/v3/files")) {
             // Request only Drive metadata scopes for Drive file lookup calls.
             arrayOf(
                 "https://www.googleapis.com/auth/drive.metadata.readonly",
@@ -578,24 +583,10 @@ class GoogleSheetsApi(
         }
         val token = tokenProvider.getAccessToken(*requestedScopes)
         if (token == null) {
-            if (path.contains("www.googleapis.com/drive/v3/files")) {
-                // #region agent log
-                agentDebugLog(
-                    hypothesisId = "T",
-                    location = "GoogleSheetsApi.request",
-                    message = "missing access token for drive request",
-                    data = JSONObject().apply {
-                        put("method", method)
-                        put("requestedScopes", requestedScopes.joinToString(" "))
-                        put("path", path.take(200))
-                    }
-                )
-                // #endregion
-            }
             return SheetsRequestResult.Failure(code = null, message = "Missing Google access token")
         }
         return withContext(Dispatchers.IO) {
-            val connection = URL(path).openConnection() as HttpURLConnection
+            val connection = connectionFactory.open(path)
             connection.requestMethod = method
             connection.setRequestProperty("Authorization", "Bearer $token")
             connection.setRequestProperty("Content-Type", "application/json")
@@ -609,43 +600,10 @@ class GoogleSheetsApi(
             val payload = if (code in 200..299) {
                 BufferedReader(connection.inputStream.reader()).use { it.readText() }
             } else {
-                if (path.contains("www.googleapis.com/drive/v3/files")) {
-                    val errorPayload = runCatching {
-                        connection.errorStream?.bufferedReader()?.use { it.readText() }
-                    }.getOrNull().orEmpty()
-                    // #region agent log
-                    agentDebugLog(
-                        hypothesisId = "R",
-                        location = "GoogleSheetsApi.request",
-                        message = "drive files request failed",
-                        data = JSONObject().apply {
-                            put("method", method)
-                            put("code", code)
-                            put("path", path.take(200))
-                            put("errorSample", errorPayload.take(300))
-                        }
-                    )
-                    // #endregion
-                }
                 return@withContext SheetsRequestResult.Failure(
                     code = code,
                     message = "HTTP $code for ${path.take(120)}"
                 )
-            }
-            if (path.contains("www.googleapis.com/drive/v3/files")) {
-                // #region agent log
-                agentDebugLog(
-                    hypothesisId = "R",
-                    location = "GoogleSheetsApi.request",
-                    message = "drive files request ok",
-                    data = JSONObject().apply {
-                        put("method", method)
-                        put("code", code)
-                        put("path", path.take(200))
-                        put("payloadSample", payload.take(300))
-                    }
-                )
-                // #endregion
             }
             val json = if (payload.isBlank()) null else JSONObject(payload)
             SheetsRequestResult.Success(json)
@@ -656,7 +614,7 @@ class GoogleSheetsApi(
         val encodedRange = java.net.URLEncoder.encode("$tabName!1:1", "UTF-8")
         val response = request(
             method = "GET",
-            path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
+            path = "${endpoints.sheetsBaseUrl.trimEnd('/')}/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
         ).bodyOrThrow() ?: return emptyList()
         val values = response.optJSONArray("values") ?: return emptyList()
         if (values.length() == 0) return emptyList()
@@ -667,7 +625,7 @@ class GoogleSheetsApi(
         val encodedRange = java.net.URLEncoder.encode("$tabName!1:1", "UTF-8")
         val response = request(
             method = "GET",
-            path = "https://sheets.googleapis.com/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
+            path = "${endpoints.sheetsBaseUrl.trimEnd('/')}/v4/spreadsheets/$spreadsheetId/values/$encodedRange"
         ).bodyOrThrow() ?: return emptyMap()
         val rows = response.optJSONArray("values") ?: return emptyMap()
         val headers = rows.optJSONArray(0)?.toStringList().orEmpty()
@@ -794,19 +752,6 @@ class OutreachRepository(
     suspend fun syncFromSheet() {
         val cfg = configStore.config.first()
         if (cfg.spreadsheetId.isBlank() || cfg.selectedTabs.isEmpty()) return
-        // #region agent log
-        val householdRowCountBefore = dao.householdRowCount()
-        agentDebugLog(
-            hypothesisId = "A",
-            location = "OutreachRepository.syncFromSheet:entry",
-            message = "sync start",
-            data = JSONObject().apply {
-                put("spreadsheetId", cfg.spreadsheetId)
-                put("selectedTabs", cfg.selectedTabs.joinToString(","))
-                put("householdRowCountBefore", householdRowCountBefore)
-            }
-        )
-        // #endregion
         val entities = mutableListOf<HouseholdEntity>()
         val geocodeCache = mutableMapOf<String, Pair<Double, Double>?>()
         val existingById = dao.householdSnapshot().associateBy { it.id }
@@ -841,19 +786,6 @@ class OutreachRepository(
             }
         }
         dao.upsertHouseholds(entities)
-        // #region agent log
-        val householdRowCountAfter = dao.householdRowCount()
-        agentDebugLog(
-            hypothesisId = "A",
-            location = "OutreachRepository.syncFromSheet:afterUpsert",
-            message = "sync upsert complete",
-            data = JSONObject().apply {
-                put("spreadsheetId", cfg.spreadsheetId)
-                put("entitiesBuilt", entities.size)
-                put("householdRowCountAfter", householdRowCountAfter)
-            }
-        )
-        // #endregion
     }
 
     suspend fun saveVisitUpdate(update: VisitUpdate) {
