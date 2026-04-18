@@ -1,6 +1,7 @@
 package org.outreach.testing
 
 import androidx.test.platform.app.InstrumentationRegistry
+import org.outreach.app.testing.NavigationTestSupport
 import org.outreach.core.data.CollaborationRepository
 import org.outreach.core.data.OutreachRepository
 import org.outreach.core.data.OutreachServiceLocator
@@ -18,6 +19,7 @@ object OutreachUiTestEnvironment {
     fun clearOverrides() {
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             OutreachServiceLocator.clearTestOverrides()
+            NavigationTestSupport.reset()
         }
     }
 }

@@ -24,6 +24,9 @@ object TestTags {
     const val MAP_ROOT = "map_root"
     const val MAP_SEARCH = "map_search"
     const val MAP_LIST = "map_list"
+    /** Prefix only; row tag is `[MAP_LIST_ROW_PREFIX][householdId]`. */
+    const val MAP_LIST_ROW_PREFIX = "map_list_row_"
+    const val MAP_NAV_FAB = "map_nav_fab"
     const val MAP_ADD_PERSON = "map_add_person"
 
     const val VISITS_ROOT = "visits_root"

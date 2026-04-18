@@ -42,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -53,6 +54,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -70,6 +74,8 @@ import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.Polyline
 import com.google.maps.android.compose.rememberCameraPositionState
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
@@ -84,6 +90,8 @@ import java.time.format.DateTimeFormatter
 import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.RawHouseholdRow
 import org.outreach.core.model.SourceMetadata
+import org.outreach.app.testing.NavigationTestSupport
+import org.outreach.app.testing.TestRuntime
 import org.outreach.ui.testtags.TestTags
 
 data class MapViewportState(
@@ -206,11 +214,20 @@ fun MapScreen(
     var routeDistanceText by remember { mutableStateOf<String?>(null) }
     var routeDurationText by remember { mutableStateOf<String?>(null) }
     var routeDurationSeconds by remember { mutableStateOf<Int?>(null) }
+    var loadedRouteDistanceText by remember { mutableStateOf<String?>(null) }
+    var loadedRouteDurationText by remember { mutableStateOf<String?>(null) }
+    var loadedRouteDurationSeconds by remember { mutableStateOf<Int?>(null) }
+    var routeTotalPathMeters by remember { mutableStateOf(0.0) }
+    var navigationLeadSegmentIndex by remember { mutableStateOf(0) }
+    var navigationRemainingPolyline by remember { mutableStateOf<List<LatLng>?>(null) }
     var routeTargetHousehold by remember { mutableStateOf<HouseholdRecord?>(null) }
     var routeLoading by remember { mutableStateOf(false) }
     var routeLoadError by remember { mutableStateOf<String?>(null) }
     var isNavigationActive by remember { mutableStateOf(false) }
     var activeNavigationHouseholdId by remember { mutableStateOf<String?>(null) }
+    val isNavigationActiveState by rememberUpdatedState(isNavigationActive)
+    val routePointsState by rememberUpdatedState(routePoints)
+    val activeNavigationHouseholdIdState by rememberUpdatedState(activeNavigationHouseholdId)
     var spokenNavigationHouseholdId by remember { mutableStateOf<String?>(null) }
     var pendingRouteHousehold by remember { mutableStateOf<HouseholdRecord?>(null) }
     var activateNavigationAfterPermission by remember { mutableStateOf(false) }
@@ -248,9 +265,15 @@ fun MapScreen(
                     result.onSuccess { pts ->
                         routePoints = pts.points
                         routeSpokenInstructions = pts.spokenInstructions
+                        loadedRouteDistanceText = pts.distanceText
+                        loadedRouteDurationText = pts.durationText
+                        loadedRouteDurationSeconds = pts.durationSeconds
                         routeDistanceText = pts.distanceText
                         routeDurationText = pts.durationText
                         routeDurationSeconds = pts.durationSeconds
+                        routeTotalPathMeters = RouteProgress.totalPathLengthMeters(pts.points)
+                        navigationLeadSegmentIndex = 0
+                        navigationRemainingPolyline = null
                         routeTargetHousehold = pending
                         if (activateAfterPermission) {
                             isNavigationActive = true
@@ -259,9 +282,14 @@ fun MapScreen(
                         }
                     }.onFailure { e ->
                         routeLoadError = e.message ?: "Route failed"
+                        loadedRouteDistanceText = null
+                        loadedRouteDurationText = null
+                        loadedRouteDurationSeconds = null
                         routeDistanceText = null
                         routeDurationText = null
                         routeDurationSeconds = null
+                        routeTotalPathMeters = 0.0
+                        navigationRemainingPolyline = null
                         if (activateAfterPermission) {
                             isNavigationActive = false
                             activeNavigationHouseholdId = null
@@ -317,9 +345,15 @@ fun MapScreen(
                 result.onSuccess { pts ->
                     routePoints = pts.points
                     routeSpokenInstructions = pts.spokenInstructions
+                    loadedRouteDistanceText = pts.distanceText
+                    loadedRouteDurationText = pts.durationText
+                    loadedRouteDurationSeconds = pts.durationSeconds
                     routeDistanceText = pts.distanceText
                     routeDurationText = pts.durationText
                     routeDurationSeconds = pts.durationSeconds
+                    routeTotalPathMeters = RouteProgress.totalPathLengthMeters(pts.points)
+                    navigationLeadSegmentIndex = 0
+                    navigationRemainingPolyline = null
                     routeTargetHousehold = household
                     if (activateOnSuccess) {
                         isNavigationActive = true
@@ -328,9 +362,14 @@ fun MapScreen(
                     }
                 }.onFailure { e ->
                     routeLoadError = e.message ?: "Route failed"
+                    loadedRouteDistanceText = null
+                    loadedRouteDurationText = null
+                    loadedRouteDurationSeconds = null
                     routeDistanceText = null
                     routeDurationText = null
                     routeDurationSeconds = null
+                    routeTotalPathMeters = 0.0
+                    navigationRemainingPolyline = null
                     if (activateOnSuccess) {
                         isNavigationActive = false
                         activeNavigationHouseholdId = null
@@ -347,9 +386,15 @@ fun MapScreen(
         if (routePoints != null && (selectedHouseholdId == null || selectedHouseholdId != routeId)) {
             routePoints = null
             routeSpokenInstructions = emptyList()
+            loadedRouteDistanceText = null
+            loadedRouteDurationText = null
+            loadedRouteDurationSeconds = null
             routeDistanceText = null
             routeDurationText = null
             routeDurationSeconds = null
+            routeTotalPathMeters = 0.0
+            navigationLeadSegmentIndex = 0
+            navigationRemainingPolyline = null
             routeTargetHousehold = null
             routeLoadError = null
             isNavigationActive = false
@@ -359,16 +404,128 @@ fun MapScreen(
         }
     }
 
+    LaunchedEffect(isNavigationActive) {
+        if (!isNavigationActive && routePoints != null) {
+            routeDistanceText = loadedRouteDistanceText
+            routeDurationText = loadedRouteDurationText
+            routeDurationSeconds = loadedRouteDurationSeconds
+            navigationLeadSegmentIndex = 0
+            navigationRemainingPolyline = null
+        }
+    }
+
     LaunchedEffect(isNavigationActive, activeNavigationHouseholdId, routeTargetHousehold, routeSpokenInstructions) {
         val targetHousehold = routeTargetHousehold
         if (!isNavigationActive || targetHousehold == null) return@LaunchedEffect
         if (targetHousehold.id != activeNavigationHouseholdId) return@LaunchedEffect
         if (spokenNavigationHouseholdId == targetHousehold.id) return@LaunchedEffect
+        // #region agent log
+        agentDebugLog(
+            "B",
+            "MapScreen.kt:LaunchedEffect_spokenNav",
+            "speak_route_start",
+            mapOf(
+                "instructionCount" to routeSpokenInstructions.size,
+                "destinationId" to targetHousehold.id
+            )
+        )
+        // #endregion
         spokenNavigationHost.speakRouteStart(
             destinationLabel = targetHousehold.name,
             instructions = routeSpokenInstructions
         )
         spokenNavigationHouseholdId = targetHousehold.id
+    }
+
+    LaunchedEffect(isNavigationActive, hasLocationPermission, activeNavigationHouseholdId) {
+        if (!isNavigationActive || activeNavigationHouseholdId == null || !hasLocationPermission) {
+            return@LaunchedEffect
+        }
+
+        fun applyNavigationFix(lat: Double, lng: Double) {
+            if (!isNavigationActiveState || activeNavigationHouseholdIdState == null) return
+            val pts = routePointsState ?: return
+            if (pts.size < 2) return
+            val here = LatLng(lat, lng)
+            val snap = RouteProgress.computeNavigationUiSnapshot(
+                here = here,
+                points = pts,
+                leadSegmentIndex = navigationLeadSegmentIndex,
+                totalPathMeters = routeTotalPathMeters,
+                loadedDurationSeconds = loadedRouteDurationSeconds,
+                loadedDurationTextFallback = loadedRouteDurationText
+            )
+            navigationLeadSegmentIndex = snap.leadSegmentIndex
+            navigationRemainingPolyline = snap.remainingPolyline
+            routeDistanceText = snap.distanceText
+            routeDurationText = snap.durationText
+            routeDurationSeconds = snap.durationSeconds
+        }
+
+        if (TestRuntime.isInstrumentation) {
+            val simulated = NavigationTestSupport.simulatedNavigationLocations
+            if (simulated != null) {
+                simulated.forEachIndexed { index, coords ->
+                    delay(50L)
+                    NavigationTestSupport.recordSimulatedNavigationUpdate()
+                    applyNavigationFix(coords.first, coords.second)
+                    val updateCount = index + 1
+                    if (updateCount <= 8) {
+                        // #region agent log
+                        agentDebugLog(
+                            "C",
+                            "MapScreen.kt:simulatedNavLocation",
+                            "position_update_while_nav",
+                            mapOf(
+                                "lat" to coords.first,
+                                "lng" to coords.second,
+                                "updateIndex" to updateCount,
+                                "uiDistanceText" to routeDistanceText,
+                                "uiDurationText" to routeDurationText,
+                                "activeNavId" to activeNavigationHouseholdId
+                            )
+                        )
+                        // #endregion
+                    }
+                }
+                return@LaunchedEffect
+            }
+        }
+        val client = LocationServices.getFusedLocationProviderClient(context)
+        val request = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, 4000L)
+            .setMinUpdateIntervalMillis(4000L)
+            .build()
+        var updateCount = 0
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                val loc = result.lastLocation ?: return
+                updateCount++
+                applyNavigationFix(loc.latitude, loc.longitude)
+                if (updateCount <= 8) {
+                    // #region agent log
+                    agentDebugLog(
+                        "C",
+                        "MapScreen.kt:onLocationResult",
+                        "position_update_while_nav",
+                        mapOf(
+                            "lat" to loc.latitude,
+                            "lng" to loc.longitude,
+                            "updateIndex" to updateCount,
+                            "uiDistanceText" to routeDistanceText,
+                            "uiDurationText" to routeDurationText,
+                            "activeNavId" to activeNavigationHouseholdId
+                        )
+                    )
+                    // #endregion
+                }
+            }
+        }
+        client.requestLocationUpdates(request, callback, android.os.Looper.getMainLooper())
+        try {
+            awaitCancellation()
+        } finally {
+            client.removeLocationUpdates(callback)
+        }
     }
 
     LaunchedEffect(mapMarkers, selectedHouseholdId, hasLocationPermission) {
@@ -513,7 +670,13 @@ fun MapScreen(
                         zIndex = 0.5f
                     )
                 }
-                routePoints?.takeIf { it.size >= 2 }?.let { pts ->
+                val routePolylinePoints = when {
+                    isNavigationActive &&
+                        !navigationRemainingPolyline.isNullOrEmpty() &&
+                        navigationRemainingPolyline!!.size >= 2 -> navigationRemainingPolyline
+                    else -> routePoints
+                }
+                routePolylinePoints?.takeIf { it.size >= 2 }?.let { pts ->
                     Polyline(
                         points = pts,
                         color = Color(0xFF1565C0),
@@ -619,7 +782,9 @@ fun MapScreen(
                 items(filteredData) { household ->
                     val isSelected = household.id == selectedHouseholdId
                     Card(
-                        modifier = Modifier.padding(vertical = 6.dp),
+                        modifier = Modifier
+                            .padding(vertical = 6.dp)
+                            .testTag(TestTags.MAP_LIST_ROW_PREFIX + household.id),
                         colors = CardDefaults.cardColors(
                             containerColor = if (isSelected) {
                                 MaterialTheme.colorScheme.primaryContainer
@@ -702,7 +867,9 @@ fun MapScreen(
                         }
                     }
                 },
-                modifier = Modifier.alpha(if (hasSelectedHousehold) 1f else 0.45f)
+                modifier = Modifier
+                    .alpha(if (hasSelectedHousehold) 1f else 0.45f)
+                    .testTag(TestTags.MAP_NAV_FAB)
             ) {
                 Icon(
                     imageVector = if (isActiveForSelection) Icons.Filled.Stop else Icons.Filled.PlayArrow,
@@ -775,6 +942,21 @@ private suspend fun loadDrivingRoutePreview(
     apiKey: String,
     cameraPositionState: CameraPositionState
 ): Result<DrivingRoute> {
+    if (TestRuntime.isInstrumentation) {
+        val injected = NavigationTestSupport.previewRouteByHouseholdId?.get(household.id)
+        if (injected != null) {
+            // Avoid fitCameraToRoute here: CameraUpdateFactory requires Maps SDK init (lazy with Compose GoogleMap).
+            return Result.success(injected)
+        }
+    }
+    // #region agent log
+    agentDebugLog(
+        "A",
+        "MapScreen.kt:loadDrivingRoutePreview",
+        "route_fetch_started",
+        mapOf("householdId" to household.id)
+    )
+    // #endregion
     val dest = destinationLatLng(context, household)
     if (dest == null) {
         return Result.failure(IllegalArgumentException("Could not resolve destination address."))
@@ -787,7 +969,22 @@ private suspend fun loadDrivingRoutePreview(
     } ?: return Result.failure(IllegalStateException("Current location unavailable."))
     val origin = LatLng(loc.latitude, loc.longitude)
     val routeResult = DirectionsRouteFetcher.fetchDrivingRouteDetails(origin, dest, apiKey)
-    routeResult.onSuccess { details -> fitCameraToRoute(cameraPositionState, details.points) }
+    routeResult.onSuccess { details ->
+        // #region agent log
+        agentDebugLog(
+            "A",
+            "MapScreen.kt:loadDrivingRoutePreview",
+            "route_fetched",
+            mapOf(
+                "pointCount" to details.points.size,
+                "distanceText" to details.distanceText,
+                "durationText" to details.durationText,
+                "instructionCount" to details.spokenInstructions.size
+            )
+        )
+        // #endregion
+        fitCameraToRoute(cameraPositionState, details.points)
+    }
     return routeResult
 }
 

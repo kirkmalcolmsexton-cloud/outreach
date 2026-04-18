@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.work.Configuration
 import com.google.android.gms.auth.GoogleAuthUtil
 import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.maps.MapsInitializer
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +23,7 @@ class OutreachApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        MapsInitializer.initialize(applicationContext)
         if (TestRuntime.skipStartupSideEffects && OutreachServiceLocator.hasTestOverrides()) {
             return
         }

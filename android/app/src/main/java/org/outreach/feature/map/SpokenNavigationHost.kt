@@ -51,14 +51,13 @@ class SpokenNavigationHost : TextToSpeech.OnInitListener {
         val cleaned = instructions
             .map { it.trim() }
             .filter { it.isNotBlank() }
-            .take(10)
         val spokenList = buildList {
             add("Starting navigation to $destinationLabel.")
-            if (cleaned.isEmpty()) {
-                add("Route loaded. Continue toward your destination.")
+            val first = cleaned.firstOrNull()
+            if (first != null) {
+                add(first)
             } else {
-                addAll(cleaned)
-                add("You are on route to $destinationLabel.")
+                add("Follow the highlighted route.")
             }
         }
         if (!isReady) {
