@@ -1,19 +1,31 @@
-# Requires dependency graph / Dependabot on the repo (GitHub Settings → Code security).
+# Needs dependency graph enabled (Settings → Code security). Private repos on many plans
+# also require GitHub Advanced Security or the action exits with "not supported".
 name: Dependency Review
 
 on:
   pull_request:
+  workflow_dispatch:
 
 concurrency:
-  group: dependency-review-${{ github.event.pull_request.number }}
+  group: dependency-review-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   dependency-review:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Private repos need GitHub Advanced Security for Dependency Review — the action fails with
+      # "not supported" otherwise. Emit a passing step so required check names still complete.
+      - name: Skip (private repo without GHAS dependency review)
+        if: ${{ github.event.repository.private == true }}
+        run: |
+          echo "::notice title=Dependency Review::Skipped on private repo — enable GHAS + dependency graph to run analysis, or remove this required check from branch rules."
+
       - uses: actions/dependency-review-action@v4
+        if: ${{ github.event.repository.private == false }}

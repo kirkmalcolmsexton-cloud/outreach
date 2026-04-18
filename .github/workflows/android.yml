@@ -6,11 +6,7 @@ name: Android CI
 on:
   push:
     branches:
-      - main
-      - master
-      - develop
-      - "release/**"
-      - "hotfix/**"
+      - "**"
     paths:
       - "android/**"
       - ".github/workflows/android.yml"
