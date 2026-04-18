@@ -1,0 +1,320 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.outreach/app-model",
+  "title": "Outreach app domain models",
+  "$defs": {
+    "VisitOutcome": {
+      "type": "string",
+      "enum": [
+        "NOT_HOME",
+        "LEFT_MESSAGE",
+        "RECEPTIVE",
+        "DO_NOT_VISIT",
+        "MOVED",
+        "DAWAT_SAATH",
+        "OTHER"
+      ],
+      "description": "Kotlin enum in code. Parsed/normalized brief comments become lowercase snake-case strings (e.g. not_home), not necessarily this enum name."
+    },
+
+    "SourceMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sheetName", "rowNumber"],
+      "properties": {
+        "sheetName": {
+          "type": "string",
+          "description": "ZIP tab / sheet name in the spreadsheet."
+        },
+        "rowNumber": {
+          "type": "integer",
+          "description": "1-based sheet row number for this record."
+        }
+      }
+    },
+
+    "RawHouseholdRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "briefComments": { "type": ["string", "null"] },
+        "lastVisited": { "type": ["string", "null"] },
+        "name": { "type": ["string", "null"] },
+        "streetAddress": { "type": ["string", "null"] },
+        "neighborhood": { "type": ["string", "null"] },
+        "notes": { "type": ["string", "null"] }
+      }
+    },
+
+    "HouseholdRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "streetAddress",
+        "neighborhood",
+        "briefComment",
+        "source",
+        "raw"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable id, typically household_<slug> from name|address|neighborhood."
+        },
+        "name": { "type": "string" },
+        "streetAddress": { "type": "string" },
+        "neighborhood": { "type": "string" },
+        "briefComment": {
+          "type": "string",
+          "description": "Normalized brief comment string (often enum-like lowercase, e.g. not_home)."
+        },
+        "lastVisited": {
+          "type": ["string", "null"],
+          "description": "ISO-8601 date (yyyy-MM-dd) when parsed from sheet."
+        },
+        "notes": { "type": ["string", "null"] },
+        "source": { "$ref": "#/$defs/SourceMetadata" },
+        "raw": { "$ref": "#/$defs/RawHouseholdRow" },
+        "latitude": { "type": ["number", "null"] },
+        "longitude": { "type": ["number", "null"] },
+        "assignedTo": { "type": ["string", "null"] }
+      }
+    },
+
+    "SpreadsheetRowInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One data row after header mapping from Google Sheets (see canonical column names in GoogleSheetsApi).",
+      "properties": {
+        "briefComments": { "type": ["string", "null"] },
+        "lastVisited": { "type": ["string", "null"] },
+        "name": { "type": ["string", "null"] },
+        "streetAddress": { "type": ["string", "null"] },
+        "neighborhood": { "type": ["string", "null"] },
+        "notes": { "type": ["string", "null"] }
+      }
+    },
+
+    "AppConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "spreadsheetId": { "type": "string", "default": "" },
+        "spreadsheetTitle": { "type": ["string", "null"] },
+        "selectedTabs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "description": "Kotlin Set<String>; stored as comma-separated in preferences."
+        },
+        "mapBriefCommentMode": { "type": "string", "default": "include_all" },
+        "mapBriefCommentFilter": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "mapDateStartIso": {
+          "type": ["string", "null"],
+          "description": "ISO date string or null."
+        },
+        "mapDateEndIso": { "type": ["string", "null"] },
+        "mapQuickRange": { "type": "string", "default": "All" },
+        "mapOldestRecordsLimit": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        }
+      }
+    },
+
+    "VisitUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["householdId", "briefComment", "lastVisitedIsoDate"],
+      "properties": {
+        "householdId": { "type": "string" },
+        "briefComment": { "type": "string" },
+        "notes": { "type": ["string", "null"] },
+        "lastVisitedIsoDate": {
+          "type": "string",
+          "description": "Written to the sheet Last visited column."
+        },
+        "sheetName": { "type": ["string", "null"] },
+        "rowNumber": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+
+    "CollaborationEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["userId", "type", "epochMillis"],
+      "properties": {
+        "userId": { "type": "string" },
+        "householdId": { "type": ["string", "null"] },
+        "tabName": { "type": ["string", "null"] },
+        "type": { "type": "string" },
+        "epochMillis": { "type": "integer" }
+      }
+    },
+
+    "HouseholdEntity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "streetAddress",
+        "neighborhood",
+        "briefComment",
+        "sheetName",
+        "rowNumber"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "streetAddress": { "type": "string" },
+        "neighborhood": { "type": "string" },
+        "briefComment": { "type": "string" },
+        "lastVisited": { "type": ["string", "null"] },
+        "notes": { "type": ["string", "null"] },
+        "sheetName": { "type": "string" },
+        "rowNumber": { "type": "integer" },
+        "latitude": { "type": ["number", "null"] },
+        "longitude": { "type": ["number", "null"] },
+        "assignedTo": { "type": ["string", "null"] }
+      },
+      "description": "Room table `households`; rowNumber may be -1 until appended to the sheet."
+    },
+
+    "PendingSyncEntity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["householdId", "briefComment", "lastVisitedIsoDate"],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Room auto-generated primary key."
+        },
+        "householdId": { "type": "string" },
+        "briefComment": { "type": "string" },
+        "notes": { "type": ["string", "null"] },
+        "lastVisitedIsoDate": { "type": "string" },
+        "sheetName": { "type": ["string", "null"] },
+        "rowNumber": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+
+    "PendingAppendEntity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["householdId", "name", "streetAddress", "neighborhood", "sheetName"],
+      "properties": {
+        "householdId": { "type": "string" },
+        "name": { "type": "string" },
+        "streetAddress": { "type": "string" },
+        "neighborhood": { "type": "string" },
+        "sheetName": { "type": "string" }
+      }
+    },
+
+    "FirestorePresenceDoc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tabName", "updatedAt"],
+      "properties": {
+        "tabName": { "type": "string" },
+        "updatedAt": {
+          "type": "integer",
+          "description": "System.currentTimeMillis()"
+        }
+      },
+      "description": "Document ID = userId in collection `presence`."
+    },
+
+    "FirestoreActivityDoc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["userId", "type", "epochMillis"],
+      "properties": {
+        "userId": { "type": "string" },
+        "householdId": { "type": ["string", "null"] },
+        "tabName": { "type": ["string", "null"] },
+        "type": { "type": "string" },
+        "epochMillis": { "type": "integer" }
+      },
+      "description": "Auto-ID documents in collection `activity`; same fields as CollaborationEvent."
+    },
+
+    "LatLng": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["latitude", "longitude"],
+      "properties": {
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" }
+      }
+    },
+
+    "DrivingRoute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["points", "spokenInstructions"],
+      "properties": {
+        "points": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/LatLng" }
+        },
+        "spokenInstructions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "distanceText": { "type": ["string", "null"] },
+        "durationText": { "type": ["string", "null"] },
+        "durationSeconds": { "type": ["integer", "null"] }
+      }
+    },
+
+    "OutreachCarNavSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "destinationLabel",
+        "instructions",
+        "primaryInstructionIndex",
+        "routePoints",
+        "isNavigating"
+      ],
+      "properties": {
+        "destinationLabel": { "type": "string" },
+        "instructions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "primaryInstructionIndex": { "type": "integer", "minimum": 0 },
+        "distanceText": { "type": ["string", "null"] },
+        "durationText": { "type": ["string", "null"] },
+        "durationSeconds": { "type": ["integer", "null"] },
+        "remainingMeters": { "type": ["number", "null"] },
+        "routePoints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/LatLng" }
+        },
+        "isNavigating": { "type": "boolean" }
+      }
+    },
+
+    "MapViewportState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["latitude", "longitude", "zoom", "tilt", "bearing"],
+      "properties": {
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "zoom": { "type": "number" },
+        "tilt": { "type": "number" },
+        "bearing": { "type": "number" }
+      }
+    }
+  }
+}
