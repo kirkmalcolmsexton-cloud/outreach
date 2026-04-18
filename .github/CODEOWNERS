@@ -1,0 +1,8 @@
+# Required reviewers when "Require review from Code Owners" is enabled on branch rulesets.
+# Update the handle if your GitHub username differs from the repo’s primary maintainer.
+
+* @kirkmalcolmsexton
+
+# Workflow changes affect CI secrets and merge gates — always review.
+.github/workflows/ @kirkmalcolmsexton
+.github/ @kirkmalcolmsexton

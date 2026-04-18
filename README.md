@@ -18,6 +18,8 @@ The Android app lives in **`android/`** as a **single-module** project (root Gra
 | **Past first setup** — exploring Outreach using a **real phone** over USB | [**Physical device testing**](#physical-device-testing) |
 | **Comfortable with Android** — you want **commands, flags, and scripts** without extra narrative | [**CLI quick reference**](#cli-quick-reference) |
 | **Cursor / multi-root workspace** — you use the workspace repo next to Outreach | [**Cursor workspace**](#cursor-workspace) |
+| **Cutting a Play release / branching** — maintainers integrating and shipping | [**Release process (GitFlow)**](#release-process-gitflow) |
+| **CI/CD & PR checks** — GitHub Actions, merge gates | [**CI/CD (GitHub Actions)**](#cicd-github-actions) |
 
 ---
 
@@ -470,8 +472,93 @@ Outreach development does **not** require that workspace; you can open **`androi
 
 ---
 
+## CI/CD (GitHub Actions)
+
+This section describes the **intended** CI/CD model for Outreach (workflows may be added incrementally). Operating principle: **Phase 1** — branch protection and **`CODEOWNERS`** without blocking on CI until jobs exist; **Phase 2** — add **`.github/workflows/`**, run a **dry-run PR** to capture **exact check names**, then turn on **required status checks** in repo rulesets.
+
+**Phase 1 (maintainer checklist in GitHub):** rulesets for **`main`** / **`develop`** / **`release/**`** / **`hotfix/**`**, Code Owners, keystore custody — **[`docs/github-phase1-setup.md`](docs/github-phase1-setup.md)**.
+
+### What runs in CI (from `android/`)
+
+| Job / theme | Purpose |
+|-------------|---------|
+| **`verify`** | **`./gradlew check`** (or equivalent): compile, JVM tests, lint. Uses **`app/google-services.json.example`** copied to **`google-services.json`** so CI does not need real Firebase secrets. |
+| **`release-readiness`** | On PRs to **`release/*`** / **`hotfix/*`**: script to match branch **`X.Y.Z`** with **`versionName`** in **`build.gradle.kts`**, plus **`lintRelease`** / **`testReleaseUnitTest`**. |
+| **`instrumented`** | **`connectedDebugAndroidTest`** on an emulator (**`ReactiveCircus/android-emulator-runner`**), often with **`-PoutreachAuthResolution=mock`** — see **`docs/ui-testing.md`**. |
+| **Hardening** | Gradle **wrapper validation**, **Dependency Review** (with Dependabot / dependency graph), workflow **`concurrency`** to cancel stale runs, **fork PR** policy (forks do not receive repo **secrets** — signing/Play jobs must skip or run only on trusted refs). |
+| **Optional analysis** | **CodeQL**, Sonar, Danger, etc., as **toggleable** required checks on **`develop`** / **`release/**`** — remove from rulesets before deleting workflows if you disable them. |
+
+### Merge quality gates (required checks by target branch)
+
+Configure **GitHub Rulesets** so **required status check names** match workflow job names exactly (use a throwaway PR after workflows exist to copy names from the **Checks** tab).
+
+| PR into | Typical required checks |
+|---------|-------------------------|
+| **`develop`** | **`verify`** |
+| **`release/**`** | **`verify`** + **`release-readiness`** (+ **`instrumented`** if your policy requires emulator tests on every release PR) |
+| **`main`** | **`verify`** + **`release-readiness`** + **`instrumented`** (per policy) |
+
+**Disabling a gate safely:** remove the check from **Rulesets → Required status checks** first, then disable or delete the workflow — otherwise merges can wait for a job that no longer runs.
+
+### Continuous deployment (optional)
+
+When release signing and Play API credentials are stored as **GitHub Actions secrets**, a workflow can **`bundleRelease`**, attach the **`.aab`** as an artifact, and optionally upload to an **internal** Play track. **`needs:`** must run **`verify`** / **`release-readiness`** before **`bundleRelease`**.
+
+---
+
+## Release process (GitFlow)
+
+This repo follows a **classic GitFlow** workflow: **`main`** holds production-ready history aligned with what ships on **Google Play**; **`develop`** is the integration branch for merged feature work. **CI/CD** (above) automates build/test gates on PRs; **shipping** to Play remains a **human** cut (branch, **`bundleRelease`**, Play Console) unless you add CD workflows and secrets.
+
+**Branches**
+
+| Branch / pattern | Role |
+|------------------|------|
+| **`main`** | Production-ready code. Tag each Play release as **`vX.Y.Z`** on the merge commit that matches what you uploaded. |
+| **`develop`** | Integration target for features; day-to-day PRs merge here first, not directly to **`main`** (except via release/hotfix flows). |
+| **`feature/<name>`** or **`SCRUM-123-short-name`** | Branch from **`develop`**; PR back to **`develop`**. Pick one naming style for the team and keep it consistent. |
+| **`release/X.Y.Z`** | Cut from **`develop`** when preparing a release. **Freeze new features** — only fixes and polish. Bump app version here (see below). |
+| **`hotfix/X.Y.Z`** | Branch from **`main`** for urgent production fixes; merge to **`main`**, tag, then merge **`main` → `develop`** so fixes are not lost. |
+
+**Version numbers** live in **`android/app/build.gradle.kts`**: **`versionCode`** must **always increase** between Play uploads (Play requirement); **`versionName`** is the user-visible semver (**`X.Y.Z`**). Bump them on **`release/`** or **`hotfix/`** branches before building the store artifact.
+
+### Feature work (routine)
+
+1. **`git checkout develop && git pull`**
+2. **`git checkout -b feature/<name>`** (or ticket-prefixed branch name)
+3. Implement, push, open PR **into `develop`**
+4. After review, merge; delete the feature branch
+
+### Play Store release (happy path)
+
+1. Confirm **`develop`** builds and tests (**`./gradlew assembleDebug`**, instrumentation tests per [CLI quick reference](#cli-quick-reference)) and fix blockers.
+2. **`git checkout develop && git pull`** then **`git checkout -b release/X.Y.Z`** (same **`X.Y.Z`** as **`versionName`** — no **`v`** in the branch name).
+3. Edit **`android/app/build.gradle.kts`**: set **`versionName`** to **`X.Y.Z`** and bump **`versionCode`** by at least **1** vs the last upload.
+4. Stabilize on **`release/X.Y.Z`** with bugfixes only — no new features unless you abandon this release branch and cut a new one later.
+5. QA using **`docs/release-checklist.md`** and sign-in/maps checks (**`docs/google-oauth-checklist.md`**). From **`android/`**, build a signed bundle: **`./gradlew bundleRelease`** (configure **release signing** on the machine or builder you use; the repo does not commit **`signingConfigs`**).
+6. Upload the **AAB** to Play **Internal** or **Closed testing** first. Ensure **OAuth / Maps / Firebase** allow your **release signing SHA-1** (debug vs upload vs Play App Signing differ — see **`docs/google-oauth-checklist.md`**).
+7. When ready, merge **`release/X.Y.Z` → `main`** via PR (or your team’s reviewed merge process).
+8. On **`main`**, tag the release commit: **`git tag -a vX.Y.Z -m "Outreach X.Y.Z"`**.
+9. **`git checkout develop && git merge main`** so **`develop`** includes any release fixes.
+10. Delete the **`release/X.Y.Z`** branch after merges complete.
+
+### Hotfix (production emergency)
+
+1. **`git checkout main && git pull`**
+2. **`git checkout -b hotfix/X.Y.Z`** — bump **`versionCode`** and patch **`versionName`** in **`build.gradle.kts`**, fix, **`./gradlew bundleRelease`**, upload to Play.
+3. Merge **`hotfix/X.Y.Z` → `main`**, tag **`vX.Y.Z`**, then **`git checkout develop && git merge main`** (or cherry-pick equivalent) so **`develop`** stays in sync.
+
+### Secrets and signing (not tied to Git branches)
+
+Store credentials are **orthogonal** to GitFlow: **`google-services.json`** and **`MAPS_API_KEY`** come from **`./scripts/setup-secrets.sh`** or manual setup ([**Firebase config**](#5-firebase-config-required-for-google-sign-in--firebase)). Document internally who holds the **upload keystore** and how **Play App Signing** is configured.
+
+---
+
 ## Documentation
 
+- **CI/CD and PR merge gates** — [CI/CD (GitHub Actions)](#cicd-github-actions) (this README)
+- **GitHub Phase 1** (rulesets, Code Owners, no required CI yet) — [`docs/github-phase1-setup.md`](docs/github-phase1-setup.md)
+- **Release branching and Play uploads** — [Release process (GitFlow)](#release-process-gitflow) (this README)
 - **`docs/android-architecture.md`**
 - **`docs/sync-and-collab.md`**
 - **`docs/release-checklist.md`**
