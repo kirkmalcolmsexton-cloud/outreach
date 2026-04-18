@@ -23,6 +23,7 @@ Use this when debugging **403 access_denied**, verification blocks, or Firebase 
 
 - Download **`google-services.json`** from [Firebase Console](https://console.firebase.google.com/) → Project settings → Your apps → Android app `org.outreach.app`.
 - Replace [`android/app/google-services.json`](../android/app/google-services.json) with that file. It must belong to the **same** Firebase/GCP project as your Google Sign-In Web client and Firebase Auth configuration.
+- Alternatively, hydrate that path (and **`MAPS_API_KEY`** in **`local.properties`**) from the team’s passphrase-encrypted consolidated file using **`android/scripts/setup-secrets.sh`** — see [**README → Firebase config**](../README.md#5-firebase-config-required-for-google-sign-in--firebase).
 - Do not commit a real `google-services.json`; this repo commits only [`android/app/google-services.json.example`](../android/app/google-services.json.example) as a template shape.
 
 ## 5. What is safe to commit

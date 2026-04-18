@@ -209,9 +209,51 @@ Use this table so later steps match how **your** machine runs shells and Gradle:
 
 ### 5. Firebase config (required for Google Sign-In / Firebase)
 
+**Recommended — consolidated secrets file**
+
+The app expects a real **`google-services.json`** under **`android/app/`** and a **Google Maps Platform** key (**`MAPS_API_KEY`**) merged into **`android/local.properties`** (Gradle reads both; see **`android/app/build.gradle.kts`**). Teams can distribute **one passphrase-encrypted JSON** instead of copying files by hand.
+
+1. Install **`age`** and **`jq`** (needed by the helper scripts below):
+   - **macOS:** `brew install age jq`
+   - **Ubuntu / Debian:** `sudo apt install age jq`
+   - **Windows:** use **Git Bash** or **WSL** to run the **`bash`** scripts (same installs via your package manager inside WSL).
+
+2. Obtain **`outreach-secrets.json.age`** from your team (and the passphrase). Do **not** commit the passphrase.
+
+3. Put the file at **`secrets/outreach-secrets.json.age`** next to **`secrets/outreach-secrets.example.json`**, **or** pass its path explicitly.
+
+4. From **`outreach/android`**, decrypt and write the gitignored outputs:
+
+```bash
+export OUTREACH_SECRETS_PASSPHRASE='your-shared-passphrase'
+./scripts/setup-secrets.sh
+```
+
+You can point at a specific file with **`./scripts/setup-secrets.sh /path/to/outreach-secrets.json.age`** or **`OUTREACH_SECRETS_FILE`**.
+
+This writes **`app/google-services.json`** and merges **`MAPS_API_KEY`** into **`local.properties`** without removing **`sdk.dir`**.
+
+**Maintainers — create or refresh the encrypted file**
+
+Assemble plaintext JSON with the same shape as **`secrets/outreach-secrets.example.json`** (schema: **`docs/outreach-secrets.schema.json`**). Include the full Firebase **`google_services`** object from your downloaded **`google-services.json`** and your Maps key as **`maps_api_key`**.
+
+```bash
+# From repo root — copy and edit secrets/outreach-secrets.json (gitignored)
+./android/scripts/encrypt-secrets.sh \
+  -i secrets/outreach-secrets.json \
+  -o secrets/outreach-secrets.json.age
+```
+
+Set **`OUTREACH_SECRETS_PASSPHRASE`** for non-interactive encryption (requires **`expect`**, included on macOS; Linux: **`sudo apt install expect`**).
+
+**Fallback — manual Firebase download**
+
+If you do not use the consolidated file:
+
 1. Copy **`android/app/google-services.json.example`** to **`android/app/google-services.json`**.
-2. Replace with your real **`google-services.json`** from the Firebase console.  
-   - Keep this file **local-only**; do not commit it.
+2. Replace with your real **`google-services.json`** from the Firebase console.
+3. Add **`MAPS_API_KEY=…`** to **`android/local.properties`** or **`~/.gradle/gradle.properties`** (see **`android/gradle.properties`**).  
+   - Keep these files **local-only**; do not commit them.
 
 ### 6. Sanity check: build
 
@@ -343,6 +385,8 @@ Single test class:
 
 | Script | Purpose |
 |--------|---------|
+| **`./scripts/setup-secrets.sh`** | From **`outreach-secrets.json`** or **`.json.age`**, write **`app/google-services.json`** and merge **`MAPS_API_KEY`** into **`local.properties`** ([**Firebase setup**](#5-firebase-config-required-for-google-sign-in--firebase)). |
+| **`./scripts/encrypt-secrets.sh`** | Maintainer: encrypt plaintext **`secrets/outreach-secrets.json`** → **`secrets/outreach-secrets.json.age`**. |
 | **`./scripts/start-outreach-emulator.sh`** | Create default AVD if missing; start emulator ([**details**](#start-emulator-without-studio)) |
 | **`./scripts/wait-for-adb-online.sh`** | Block until **`adb`** → **`device`** and boot complete; **`ADB_WAIT_TIMEOUT`** / **`ADB_WAIT_INTERVAL`** |
 | **`./scripts/resolve-outreach-emulator-serial.sh`** | Print **`adb`** serial for the Outreach default AVD (use with **`ANDROID_SERIAL`**) |
@@ -395,6 +439,7 @@ export PATH="$ANDROID_HOME/platform-tools:$PATH"
 |---------|------------|
 | **No connected devices** | **`adb devices`** must show **`device`**. Start an AVD or plug in the phone (USB debugging authorized). |
 | **OFFLINE / device offline / Finished 0 tests** | Emulator still booting or adb stale — **`./scripts/wait-for-adb-online.sh`** or **`./scripts/adb_restart.sh`**. |
+| Map tiles missing / “Map API key missing” / Firebase config errors after clone | Run **`./scripts/setup-secrets.sh`** after placing **`secrets/outreach-secrets.json.age`** (and **`OUTREACH_SECRETS_PASSPHRASE`**), or follow [**manual Firebase / Maps**](#5-firebase-config-required-for-google-sign-in--firebase). |
 | **`Can't find service: package`** on install | Emulator **PackageManager** not ready — cold boot AVD, **`wait-for-adb-online.sh`**, **`sys.boot_completed`** = **`1`**. With **phone + emulator**, set **`ANDROID_SERIAL`**. |
 | **`device '<serial>' not found`** | Align **`ANDROID_HOME`** with **`sdk.dir`**, **`./scripts/adb_restart.sh`**, verify **`adb -s SERIAL get-state`** → **`device`**. |
 | Flaky **`adb`** | Use **`$ANDROID_HOME/platform-tools/adb`** consistently (avoid mixing SDKs). |
@@ -430,6 +475,7 @@ Outreach development does **not** require that workspace; you can open **`androi
 - **`docs/android-architecture.md`**
 - **`docs/sync-and-collab.md`**
 - **`docs/release-checklist.md`**
+- **`docs/outreach-secrets.schema.json`** (JSON schema for **`secrets/outreach-secrets.example.json`**)
 - **`docs/google-oauth-checklist.md`** (Google sign-in / Firebase OAuth troubleshooting)
 - **`docs/ui-testing.md`** (UI automation suite, test tags, instrumentation extras)
 
