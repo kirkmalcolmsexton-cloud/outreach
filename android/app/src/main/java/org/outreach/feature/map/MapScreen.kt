@@ -235,7 +235,13 @@ fun MapScreen(
     var activateNavigationAfterPermission by remember { mutableStateOf(false) }
     var localSelectedHouseholdId by remember { mutableStateOf<String?>(null) }
     var hasInitializedViewport by remember { mutableStateOf(false) }
+    /** True after [GoogleMap]'s native map finishes loading — [CameraUpdateFactory] is unsafe before that. */
+    var googleMapComposeReady by remember { mutableStateOf(false) }
     var hasPromptedInitialLocationPermission by remember { mutableStateOf(false) }
+
+    LaunchedEffect(viewMode) {
+        if (viewMode == "map") googleMapComposeReady = false
+    }
     var hasLocationPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -310,13 +316,15 @@ fun MapScreen(
                     fused.lastLocation.await()
                 }.getOrNull()
                 if (currentLocation != null) {
-                    cameraPositionState.move(
-                        CameraUpdateFactory.newLatLngZoom(
-                            LatLng(currentLocation.latitude, currentLocation.longitude),
-                            13f
+                    val moved = runCatching {
+                        cameraPositionState.move(
+                            CameraUpdateFactory.newLatLngZoom(
+                                LatLng(currentLocation.latitude, currentLocation.longitude),
+                                13f
+                            )
                         )
-                    )
-                    hasInitializedViewport = true
+                    }.isSuccess
+                    if (moved) hasInitializedViewport = true
                 }
             }
         } else if (!granted) {
@@ -578,7 +586,9 @@ fun MapScreen(
         }
     }
 
-    LaunchedEffect(mapMarkers, selectedHouseholdId, hasLocationPermission) {
+    LaunchedEffect(mapMarkers, selectedHouseholdId, hasLocationPermission, googleMapComposeReady, viewMode) {
+        if (viewMode != "map") return@LaunchedEffect
+        if (!googleMapComposeReady) return@LaunchedEffect
         if (initialViewportState != null) return@LaunchedEffect
         if (hasInitializedViewport) return@LaunchedEffect
         if (selectedHouseholdId != null) return@LaunchedEffect
@@ -595,37 +605,48 @@ fun MapScreen(
                 fused.lastLocation.await()
             }.getOrNull()
             if (currentLocation != null) {
-                cameraPositionState.move(
-                    CameraUpdateFactory.newLatLngZoom(
-                        LatLng(currentLocation.latitude, currentLocation.longitude),
-                        13f
+                val ok = runCatching {
+                    cameraPositionState.move(
+                        CameraUpdateFactory.newLatLngZoom(
+                            LatLng(currentLocation.latitude, currentLocation.longitude),
+                            13f
+                        )
                     )
-                )
-                hasInitializedViewport = true
-                return@LaunchedEffect
+                }.isSuccess
+                if (ok) {
+                    hasInitializedViewport = true
+                    return@LaunchedEffect
+                }
             }
         }
-        if (mapMarkers.isNotEmpty()) {
-            cameraPositionState.move(
-                CameraUpdateFactory.newLatLngZoom(mapMarkers.first().second, 13f)
-            )
-            hasInitializedViewport = true
+        val moved = if (mapMarkers.isNotEmpty()) {
+            runCatching {
+                cameraPositionState.move(
+                    CameraUpdateFactory.newLatLngZoom(mapMarkers.first().second, 13f)
+                )
+            }.isSuccess
         } else {
-            cameraPositionState.move(
-                CameraUpdateFactory.newLatLngZoom(defaultCenter, 10f)
-            )
+            runCatching {
+                cameraPositionState.move(
+                    CameraUpdateFactory.newLatLngZoom(defaultCenter, 10f)
+                )
+            }.isSuccess
         }
+        if (moved) hasInitializedViewport = true
     }
 
-    LaunchedEffect(selectedHouseholdId, viewMode, mapMarkers) {
+    LaunchedEffect(selectedHouseholdId, viewMode, mapMarkers, googleMapComposeReady) {
         if (viewMode != "map") return@LaunchedEffect
+        if (!googleMapComposeReady) return@LaunchedEffect
         val id = selectedHouseholdId ?: return@LaunchedEffect
         localSelectedHouseholdId = id
         val target = mapMarkers.firstOrNull { (h, _) -> h.id == id } ?: return@LaunchedEffect
-        cameraPositionState.animate(
-            CameraUpdateFactory.newLatLngZoom(target.second, selectionZoom),
-            400
-        )
+        runCatching {
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(target.second, selectionZoom),
+                400
+            )
+        }
     }
     val shouldPersistViewport = initialViewportState != null || hasInitializedViewport
     LaunchedEffect(cameraPositionState, shouldPersistViewport) {
@@ -701,7 +722,8 @@ fun MapScreen(
                     .background(Color(0xFFECEFF1)),
                 properties = MapProperties(isMyLocationEnabled = hasLocationPermission),
                 uiSettings = MapUiSettings(mapToolbarEnabled = false),
-                cameraPositionState = cameraPositionState
+                cameraPositionState = cameraPositionState,
+                onMapLoaded = { googleMapComposeReady = true }
             ) {
                 val selectedId = selectedHouseholdId?.takeIf { it.isNotBlank() }
                     ?: localSelectedHouseholdId?.takeIf { localId ->
@@ -1059,7 +1081,9 @@ private fun fitCameraToRoute(cameraPositionState: CameraPositionState, points: L
     val builder = LatLngBounds.Builder()
     for (p in points) builder.include(p)
     val bounds = builder.build()
-    cameraPositionState.move(CameraUpdateFactory.newLatLngBounds(bounds, 120))
+    runCatching {
+        cameraPositionState.move(CameraUpdateFactory.newLatLngBounds(bounds, 120))
+    }
 }
 
 private fun openGoogleMapsNavigation(
