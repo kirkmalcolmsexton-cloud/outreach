@@ -92,6 +92,8 @@ import org.outreach.core.model.RawHouseholdRow
 import org.outreach.core.model.SourceMetadata
 import org.outreach.app.testing.NavigationTestSupport
 import org.outreach.app.testing.TestRuntime
+import org.outreach.feature.car.OutreachCarNavBridge
+import org.outreach.feature.car.OutreachCarNavSnapshot
 import org.outreach.ui.testtags.TestTags
 
 data class MapViewportState(
@@ -412,6 +414,54 @@ fun MapScreen(
             navigationLeadSegmentIndex = 0
             navigationRemainingPolyline = null
         }
+    }
+
+    LaunchedEffect(
+        isNavigationActive,
+        routePoints,
+        navigationRemainingPolyline,
+        routeTargetHousehold,
+        routeSpokenInstructions,
+        navigationLeadSegmentIndex,
+        routeDistanceText,
+        routeDurationText,
+        routeDurationSeconds
+    ) {
+        val household = routeTargetHousehold
+        val pts = routePoints
+        if (!isNavigationActive || household == null || pts.isNullOrEmpty()) {
+            OutreachCarNavBridge.publish(null)
+            return@LaunchedEffect
+        }
+        val remainingMeters = when {
+            !navigationRemainingPolyline.isNullOrEmpty() && navigationRemainingPolyline!!.size >= 2 ->
+                RouteProgress.totalPathLengthMeters(navigationRemainingPolyline!!)
+            else ->
+                RouteProgress.totalPathLengthMeters(pts)
+        }
+        val polyForCar =
+            if (!navigationRemainingPolyline.isNullOrEmpty() && navigationRemainingPolyline!!.size >= 2) {
+                navigationRemainingPolyline!!
+            } else {
+                pts
+            }
+        OutreachCarNavBridge.publish(
+            OutreachCarNavSnapshot(
+                destinationLabel = household.name,
+                instructions = routeSpokenInstructions,
+                primaryInstructionIndex = OutreachCarNavBridge.instructionIndexForRouteProgress(
+                    navigationLeadSegmentIndex,
+                    pts.size,
+                    routeSpokenInstructions.size
+                ),
+                distanceText = routeDistanceText,
+                durationText = routeDurationText,
+                durationSeconds = routeDurationSeconds,
+                remainingMeters = remainingMeters,
+                routePoints = polyForCar,
+                isNavigating = true
+            )
+        )
     }
 
     LaunchedEffect(isNavigationActive, activeNavigationHouseholdId, routeTargetHousehold, routeSpokenInstructions) {
