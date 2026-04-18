@@ -88,27 +88,12 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug assembleDebugAndroidTest -PoutreachAuthResolution=mock --no-daemon
 
+      # emulator-runner runs each YAML line of `script` as its own `sh -c` (no shared cwd).
+      # Delegate to android/scripts/ci-emulator-connected-test.sh (single invocation).
       - name: Run instrumentation tests (mock auth)
         uses: ReactiveCircus/android-emulator-runner@v2
         with:
           api-level: 34
           arch: x86_64
           profile: Nexus 6
-          script: |
-            # android-emulator-runner invokes /usr/bin/sh (dash); pipefail is bash-only.
-            set -eu
-            cd "${GITHUB_WORKSPACE}/android"
-            chmod +x ./gradlew ./scripts/wait-for-adb-online.sh
-            SERIAL="$(adb devices | awk '/^emulator-/ { print $1; exit }')"
-            export ANDROID_SERIAL="${SERIAL:-emulator-5554}"
-            export ADB_WAIT_TIMEOUT="${ADB_WAIT_TIMEOUT:-300}"
-            ./scripts/wait-for-adb-online.sh
-            deadline=$((SECONDS + 120))
-            until adb -s "${ANDROID_SERIAL}" shell pm path android >/dev/null 2>&1; do
-              if (( SECONDS >= deadline )); then
-                echo "Timed out waiting for PackageManager (pm path android)."
-                exit 1
-              fi
-              sleep 2
-            done
-            ./gradlew connectedDebugAndroidTest -PoutreachAuthResolution=mock --no-daemon
+          script: bash "${GITHUB_WORKSPACE}/android/scripts/ci-emulator-connected-test.sh"
