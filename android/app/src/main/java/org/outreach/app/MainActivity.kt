@@ -72,6 +72,7 @@ import org.outreach.feature.map.MapScreen
 import org.outreach.feature.settings.SettingsScreen
 import org.outreach.feature.visits.VisitLogScreen
 import org.outreach.app.testing.TestRuntime
+import org.outreach.app.testing.UiAutomationConfig
 import org.outreach.ui.testtags.TestTags
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -90,12 +91,13 @@ private fun shouldUseMockDrivePickerOnThisDevice(): Boolean {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val uiAutomationConfig = UiAutomationConfig.fromIntent(intent)
         if (!TestRuntime.skipStartupSideEffects) {
             scheduleBackgroundSync()
         }
         setContent {
             MaterialTheme {
-                OutreachRoot()
+                OutreachRoot(uiAutomationConfig)
             }
         }
     }
@@ -118,13 +120,15 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun OutreachRoot() {
+private fun OutreachRoot(uiAutomationConfig: UiAutomationConfig = UiAutomationConfig()) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    var showStartupScreen by remember { mutableStateOf(true) }
-    var showLoginGate by remember { mutableStateOf(false) }
+    val fastStartup = TestRuntime.isInstrumentation || uiAutomationConfig.skipStartupDelay
+    val forcedInitialViewMode = uiAutomationConfig.homeViewMode
+    var showStartupScreen by remember { mutableStateOf(!fastStartup) }
+    var showLoginGate by remember { mutableStateOf(uiAutomationConfig.forceLoginGate) }
     var screen by remember { mutableStateOf("home") }
-    var mapViewMode by remember { mutableStateOf("map") }
+    var mapViewMode by remember { mutableStateOf(forcedInitialViewMode ?: "map") }
     var pickedSpreadsheetId by remember { mutableStateOf<String?>(null) }
     var pickedSpreadsheetDisplayName by remember { mutableStateOf<String?>(null) }
     var showMockDrivePicker by remember { mutableStateOf(false) }
@@ -158,9 +162,13 @@ private fun OutreachRoot() {
     val syncCoordinator = remember {
         RepositorySyncCoordinator { OutreachServiceLocator.repository }
     }
-    LaunchedEffect(Unit) {
-        delay(1200)
-        showStartupScreen = false
+    LaunchedEffect(fastStartup) {
+        if (fastStartup) {
+            showStartupScreen = false
+        } else {
+            delay(1200)
+            showStartupScreen = false
+        }
     }
     LaunchedEffect(savedConfig.spreadsheetId) {
         val repository = OutreachServiceLocator.repository ?: return@LaunchedEffect
@@ -271,8 +279,15 @@ private fun OutreachRoot() {
                             )
                         }
                     }
-                    val currentUser = FirebaseAuth.getInstance().currentUser
-                    IconButton(onClick = { profileMenuExpanded = true }) {
+                    val resolvedAuthState = remember(uiAutomationConfig.forcedAuthState) {
+                        resolveAuthUiState(
+                            forcedAuthState = uiAutomationConfig.forcedAuthState
+                        )
+                    }
+                    IconButton(
+                        onClick = { profileMenuExpanded = true },
+                        modifier = Modifier.testTag(TestTags.PROFILE_BUTTON)
+                    ) {
                         Icon(
                             Icons.Default.AccountCircle,
                             contentDescription = "Profile"
@@ -282,15 +297,14 @@ private fun OutreachRoot() {
                         expanded = profileMenuExpanded,
                         onDismissRequest = { profileMenuExpanded = false }
                     ) {
-                        val userLine = currentUser?.email
-                            ?: currentUser?.displayName
-                            ?: "Not logged in"
+                        val userLine = resolvedAuthState.userLine
                         DropdownMenuItem(
                             text = { Text(userLine) },
                             onClick = { profileMenuExpanded = false }
                         )
-                        if (currentUser == null) {
+                        if (!resolvedAuthState.isSignedIn) {
                             DropdownMenuItem(
+                                modifier = Modifier.testTag(TestTags.PROFILE_MENU_LOGIN),
                                 text = { Text("Login") },
                                 onClick = {
                                     profileMenuExpanded = false
@@ -299,18 +313,20 @@ private fun OutreachRoot() {
                             )
                         } else {
                             DropdownMenuItem(
+                                modifier = Modifier.testTag(TestTags.PROFILE_MENU_SWITCH),
                                 text = { Text("Switch profile") },
                                 onClick = {
                                     profileMenuExpanded = false
-                                    signOutCurrentSession(context)
+                                    signOutCurrentSession(context, uiAutomationConfig.forcedAuthState)
                                     showLoginGate = true
                                 }
                             )
                             DropdownMenuItem(
+                                modifier = Modifier.testTag(TestTags.PROFILE_MENU_LOGOUT),
                                 text = { Text("Logout") },
                                 onClick = {
                                     profileMenuExpanded = false
-                                    signOutCurrentSession(context)
+                                    signOutCurrentSession(context, uiAutomationConfig.forcedAuthState)
                                     showLoginGate = false
                                 }
                             )
@@ -370,7 +386,10 @@ private fun OutreachRoot() {
             Text(
                 text = message,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(innerPadding).padding(horizontal = 16.dp, vertical = 8.dp)
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .testTag(TestTags.SYNC_STATUS_BANNER)
             )
         }
         when (screen) {
@@ -570,7 +589,38 @@ private fun OutreachRoot() {
     }
 }
 
-private fun signOutCurrentSession(context: android.content.Context) {
+private data class AuthUiState(
+    val isSignedIn: Boolean,
+    val userLine: String
+)
+
+private fun resolveAuthUiState(
+    forcedAuthState: UiAutomationConfig.ForcedAuthState?
+): AuthUiState {
+    return when (forcedAuthState) {
+        UiAutomationConfig.ForcedAuthState.SIGNED_IN -> AuthUiState(
+            isSignedIn = true,
+            userLine = "ui-test@outreach.dev"
+        )
+        UiAutomationConfig.ForcedAuthState.SIGNED_OUT -> AuthUiState(
+            isSignedIn = false,
+            userLine = "Not logged in"
+        )
+        null -> {
+            val currentUser = FirebaseAuth.getInstance().currentUser
+            AuthUiState(
+                isSignedIn = currentUser != null,
+                userLine = currentUser?.email ?: currentUser?.displayName ?: "Not logged in"
+            )
+        }
+    }
+}
+
+private fun signOutCurrentSession(
+    context: android.content.Context,
+    forcedAuthState: UiAutomationConfig.ForcedAuthState?
+) {
+    if (forcedAuthState != null) return
     runCatching { FirebaseAuth.getInstance().signOut() }
     val signInOptions = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).build()
     runCatching {

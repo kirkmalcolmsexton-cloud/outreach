@@ -4,6 +4,11 @@ object TestTags {
     const val APP_ROOT = "app_root"
     const val STARTUP_SCREEN = "startup_screen"
     const val LOGIN_GATE = "login_gate"
+    const val PROFILE_BUTTON = "profile_button"
+    const val PROFILE_MENU_LOGIN = "profile_menu_login"
+    const val PROFILE_MENU_LOGOUT = "profile_menu_logout"
+    const val PROFILE_MENU_SWITCH = "profile_menu_switch"
+    const val SYNC_STATUS_BANNER = "sync_status_banner"
 
     const val NAV_HOME = "nav_home"
     const val NAV_VISITS = "nav_visits"
