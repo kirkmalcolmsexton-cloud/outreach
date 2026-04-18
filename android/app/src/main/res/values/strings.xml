@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Google Sign-In: Web client ID (required for id tokens). Replace the placeholder below, OR use a real
+         google-services.json from Firebase (then oauth_client is filled and default_web_client_id is generated). -->
+    <string name="google_web_client_id" translatable="false">44664676233-g42rissgtkv4ss1p7o8db3bfped4rog2.apps.googleusercontent.com</string>
+</resources>

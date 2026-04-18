@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Cleartext to 127.0.0.1 required for MockWebServer in androidTest (GoogleSheetsApiHttpMockTest). -->
+    <application
+        android:usesCleartextTraffic="true"
+        tools:ignore="UnusedAttribute">
+
+        <!-- Debug-only: same APK as org.outreach.app so Compose tests can launch this activity in-process. -->
+        <activity
+            android:name="org.outreach.testing.ComposeHostActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+    </application>
+</manifest>

@@ -1,0 +1,10 @@
+{
+  "id": "household-asset-001",
+  "name": "Amina Yusuf",
+  "streetAddress": "456 Oak Ave",
+  "neighborhood": "West",
+  "briefComment": "Not home",
+  "notes": "From fixture file",
+  "sheetName": "ZIP60657",
+  "rowNumber": 8
+}
