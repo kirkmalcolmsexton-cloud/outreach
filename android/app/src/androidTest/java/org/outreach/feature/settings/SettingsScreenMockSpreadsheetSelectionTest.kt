@@ -1,6 +1,5 @@
 package org.outreach.feature.settings
 
-import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -15,12 +14,14 @@ import org.junit.Assert.assertNotNull
 import org.junit.Rule
 import org.junit.Test
 import org.outreach.core.model.AppConfig
+import org.outreach.testing.ComposeHostActivity
 import org.outreach.testing.FakeSheetsApi
+import org.outreach.testing.waitForSemanticTree
 import org.outreach.ui.testtags.TestTags
 
 class SettingsScreenMockSpreadsheetSelectionTest {
     @get:Rule
-    val composeRule = createAndroidComposeRule<ComponentActivity>()
+    val composeRule = createAndroidComposeRule<ComposeHostActivity>()
 
     @Test
     fun selectingMockedSpreadsheet_syncUsesSampleData() = runBlocking {
@@ -59,6 +60,9 @@ class SettingsScreenMockSpreadsheetSelectionTest {
                 }
             )
         }
+
+        composeRule.waitForIdle()
+        composeRule.waitForSemanticTree()
 
         composeRule.onNodeWithTag(TestTags.SETTINGS_PICK_SPREADSHEET).performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) { pickedSpreadsheetId != null }

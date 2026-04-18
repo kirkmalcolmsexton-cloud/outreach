@@ -1,7 +1,6 @@
 package org.outreach.feature.map
 
 import android.Manifest
-import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,7 +24,9 @@ import org.outreach.app.testing.NavigationTestSupport
 import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.RawHouseholdRow
 import org.outreach.core.model.SourceMetadata
+import org.outreach.testing.ComposeHostActivity
 import org.outreach.testing.OutreachUiTestEnvironment
+import org.outreach.testing.waitForSemanticTree
 import org.outreach.ui.testtags.TestTags
 
 @RunWith(AndroidJUnit4::class)
@@ -33,11 +34,12 @@ class MapNavigationFlowTest {
 
     @get:Rule(order = 0)
     val permissionRule: GrantPermissionRule = GrantPermissionRule.grant(
-        Manifest.permission.ACCESS_FINE_LOCATION
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION
     )
 
     @get:Rule(order = 1)
-    val composeRule = createAndroidComposeRule<ComponentActivity>()
+    val composeRule = createAndroidComposeRule<ComposeHostActivity>()
 
     private val householdId = "nav_test_household"
     private val destLat = 41.88
@@ -99,6 +101,9 @@ class MapNavigationFlowTest {
                 )
             }
         }
+
+        composeRule.waitForIdle()
+        composeRule.waitForSemanticTree()
 
         val rowTag = TestTags.MAP_LIST_ROW_PREFIX + householdId
         composeRule.waitUntil(timeoutMillis = 10_000) {

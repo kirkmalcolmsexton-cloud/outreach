@@ -1,6 +1,5 @@
 package org.outreach.feature.visits
 
-import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -15,13 +14,15 @@ import org.junit.Test
 import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.RawHouseholdRow
 import org.outreach.core.model.SourceMetadata
+import org.outreach.testing.ComposeHostActivity
+import org.outreach.testing.waitForSemanticTree
 import org.outreach.ui.testtags.TestTags
 import org.json.JSONObject
 
 class VisitLogScreenTest {
 
     @get:Rule
-    val composeRule = createAndroidComposeRule<ComponentActivity>()
+    val composeRule = createAndroidComposeRule<ComposeHostActivity>()
 
     @Test
     fun saveVisit_withSelectedPreset_invokesCallback() {
@@ -46,6 +47,9 @@ class VisitLogScreenTest {
                 }
             )
         }
+
+        composeRule.waitForIdle()
+        composeRule.waitForSemanticTree()
 
         composeRule.onNodeWithTag(TestTags.VISITS_BRIEF).performClick()
         composeRule.onNodeWithText("Receptive").performClick()

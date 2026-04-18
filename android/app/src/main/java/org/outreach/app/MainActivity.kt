@@ -2,6 +2,7 @@ package org.outreach.app
 
 import android.net.Uri
 import android.os.Bundle
+import android.view.WindowManager
 import android.provider.DocumentsContract
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -91,6 +92,9 @@ private fun shouldUseMockDrivePickerOnThisDevice(): Boolean {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (TestRuntime.isInstrumentation) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
         val uiAutomationConfig = UiAutomationConfig.fromIntent(intent)
         if (!TestRuntime.skipStartupSideEffects) {
             scheduleBackgroundSync()
