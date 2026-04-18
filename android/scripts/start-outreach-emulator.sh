@@ -3,6 +3,7 @@
 # Requires ANDROID_HOME or ANDROID_SDK_ROOT (same as Android Studio / CLI tools).
 #
 # Override name: OUTREACH_AVD_NAME=my_avd ./scripts/start-outreach-emulator.sh
+# Matching adb serial when the emulator is running: ./scripts/resolve-outreach-emulator-serial.sh
 # Extra emulator flags: ./scripts/start-outreach-emulator.sh -no-snapshot-load
 
 set -euo pipefail
