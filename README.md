@@ -2,6 +2,8 @@
 
 **Repository:** [github.com/kirkmalcolmsexton-cloud/outreach](https://github.com/kirkmalcolmsexton-cloud/outreach)
 
+**Jira:** [kirkmalcolmsexton.atlassian.net](https://kirkmalcolmsexton.atlassian.net) (issues and sprints; **`SCRUM-*`** keys in branch names refer to this site.)
+
 Outreach is an **Android** app for teams that work from a **Google Sheet** of households: sign in with Google, pick the spreadsheet and zip-code tabs in settings, then use a **map or list** home screen to plan routes and log visits. Data **syncs from Sheets into local storage** for offline use; visit changes are **queued and flushed** when the network is back. A **Firestore** layer adds collaboration scaffolding (presence and activity) without replacing the sheet as the source of truth.
 
 Stack highlights: **Kotlin**, **Jetpack Compose**, **Room + DataStore + WorkManager**, Google Sign-In with Sheets/Drive scopes.
@@ -474,35 +476,41 @@ Outreach development does **not** require that workspace; you can open **`androi
 
 ## CI/CD (GitHub Actions)
 
-This section describes the **intended** CI/CD model for Outreach (workflows may be added incrementally). Operating principle: **Phase 1** — branch protection and **`CODEOWNERS`** without blocking on CI until jobs exist; **Phase 2** — add **`.github/workflows/`**, run a **dry-run PR** to capture **exact check names**, then turn on **required status checks** in repo rulesets.
+Phase **1** is rulesets + **`CODEOWNERS`** without blocking on CI until jobs exist — **[`docs/github-phase1-setup.md`](docs/github-phase1-setup.md)**. Phase **2** adds **`.github/workflows/`** as below; after green runs, enable **required status checks** using the **exact** strings from the PR **Checks** tab (often **`Workflow name / job id`**, e.g. **`Android CI / verify`**).
 
-**Phase 1 (maintainer checklist in GitHub):** rulesets for **`main`** / **`develop`** / **`release/**`** / **`hotfix/**`**, Code Owners, keystore custody — **[`docs/github-phase1-setup.md`](docs/github-phase1-setup.md)**.
+**Secrets:** No custom repository secrets are required for the current jobs — **[`docs/github-actions-secrets.md`](docs/github-actions-secrets.md)**.
 
-### What runs in CI (from `android/`)
+### What runs in CI
 
-| Job / theme | Purpose |
-|-------------|---------|
-| **`verify`** | **`./gradlew check`** (or equivalent): compile, JVM tests, lint. Uses **`app/google-services.json.example`** copied to **`google-services.json`** so CI does not need real Firebase secrets. |
-| **`release-readiness`** | On PRs to **`release/*`** / **`hotfix/*`**: script to match branch **`X.Y.Z`** with **`versionName`** in **`build.gradle.kts`**, plus **`lintRelease`** / **`testReleaseUnitTest`**. |
-| **`instrumented`** | **`connectedDebugAndroidTest`** on an emulator (**`ReactiveCircus/android-emulator-runner`**), often with **`-PoutreachAuthResolution=mock`** — see **`docs/ui-testing.md`**. |
-| **Hardening** | Gradle **wrapper validation**, **Dependency Review** (with Dependabot / dependency graph), workflow **`concurrency`** to cancel stale runs, **fork PR** policy (forks do not receive repo **secrets** — signing/Play jobs must skip or run only on trusted refs). |
-| **Optional analysis** | **CodeQL**, Sonar, Danger, etc., as **toggleable** required checks on **`develop`** / **`release/**`** — remove from rulesets before deleting workflows if you disable them. |
+| Workflow file | Job id | What it does |
+|---------------|--------|----------------|
+| **[`.github/workflows/android.yml`](.github/workflows/android.yml)** | **`verify`** | Gradle **wrapper validation**, copy **`google-services.json.example`** → **`google-services.json`**, **`./gradlew check`**. |
+| Same | **`instrumented`** | **`connectedDebugAndroidTest`** with **`-PoutreachAuthResolution=mock`** on an API 34 emulator; runs after **`verify`**. See **`docs/ui-testing.md`**. |
+| **[`.github/workflows/android-release-readiness.yml`](.github/workflows/android-release-readiness.yml)** | **`release-readiness`** | Only when the PR **base** is **`release/**`** or **`hotfix/**`**: **[`android/scripts/ci-release-version-check.sh`](android/scripts/ci-release-version-check.sh)** + **`lintRelease`** + **`testReleaseUnitTest`**. |
+| **[`.github/workflows/dependency-review.yml`](.github/workflows/dependency-review.yml)** | **`dependency-review`** | Dependency Review (enable **dependency graph** on the repo). |
+| **[`.github/workflows/secret-scan.yml`](.github/workflows/secret-scan.yml)** | **`gitleaks`** | Secret scanning. |
+
+**Hardening:** **`concurrency`** cancels superseded runs. **Fork PRs** share the non-secret CI path; do not add signing/Play jobs that need repo secrets on untrusted forks without a trust model.
+
+**Optional analysis:** CodeQL, Sonar, etc. — only if you will maintain them as required checks; remove from rulesets before deleting workflows.
 
 ### Merge quality gates (required checks by target branch)
 
-Configure **GitHub Rulesets** so **required status check names** match workflow job names exactly (use a throwaway PR after workflows exist to copy names from the **Checks** tab).
+Configure **GitHub Rulesets** from the **Checks** tab (names may differ from raw job ids).
 
 | PR into | Typical required checks |
 |---------|-------------------------|
-| **`develop`** | **`verify`** |
-| **`release/**`** | **`verify`** + **`release-readiness`** (+ **`instrumented`** if your policy requires emulator tests on every release PR) |
-| **`main`** | **`verify`** + **`release-readiness`** + **`instrumented`** (per policy) |
+| **`develop`** | **`Android CI / verify`**, **`Android CI / instrumented`** (optional by policy), **`Dependency Review / dependency-review`**, **`Secret Scan / gitleaks`** |
+| **`release/**`** or **`hotfix/**`** | Above + **`Android release readiness / release-readiness`** |
+| **`main`** | Mirror your policy for merging into **`main`** (often same as **`release/**`**). |
 
-**Disabling a gate safely:** remove the check from **Rulesets → Required status checks** first, then disable or delete the workflow — otherwise merges can wait for a job that no longer runs.
+**Disabling a gate safely:** remove the check from **Rulesets → Required status checks** first, then disable or delete the workflow — otherwise merges can wait for a job that never runs.
+
+**Path filters:** Workflows trigger on **`android/**`** (and workflow paths). Doc-only PRs may skip jobs — avoid requiring checks that will not run, or touch **`android/`** when you need CI.
 
 ### Continuous deployment (optional)
 
-When release signing and Play API credentials are stored as **GitHub Actions secrets**, a workflow can **`bundleRelease`**, attach the **`.aab`** as an artifact, and optionally upload to an **internal** Play track. **`needs:`** must run **`verify`** / **`release-readiness`** before **`bundleRelease`**.
+When release signing and Play API credentials are stored as **GitHub Actions secrets**, a workflow can **`bundleRelease`**, attach the **`.aab`** as an artifact, and optionally upload to an **internal** Play track. **`needs:`** should depend on the **`verify`** and **`release-readiness`** jobs (by job id) before **`bundleRelease`**.
 
 ---
 
@@ -556,7 +564,8 @@ Store credentials are **orthogonal** to GitFlow: **`google-services.json`** and 
 
 ## Documentation
 
-- **CI/CD and PR merge gates** — [CI/CD (GitHub Actions)](#cicd-github-actions) (this README)
+- **Jira** — [kirkmalcolmsexton.atlassian.net](https://kirkmalcolmsexton.atlassian.net)
+- **CI/CD and PR merge gates** — [CI/CD (GitHub Actions)](#cicd-github-actions) (this README); **secrets reference** — [`docs/github-actions-secrets.md`](docs/github-actions-secrets.md)
 - **GitHub Phase 1** (rulesets, Code Owners, no required CI yet) — [`docs/github-phase1-setup.md`](docs/github-phase1-setup.md)
 - **Release branching and Play uploads** — [Release process (GitFlow)](#release-process-gitflow) (this README)
 - **`docs/android-architecture.md`**

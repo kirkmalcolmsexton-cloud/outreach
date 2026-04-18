@@ -1,0 +1,50 @@
+# Runs only when a PR targets release/X.Y.Z or hotfix/X.Y.Z (base branch filter).
+# Use as a required check only on rulesets for those refs — not on develop.
+name: Android release readiness
+
+on:
+  pull_request:
+    branches:
+      - "release/**"
+      - "hotfix/**"
+    paths:
+      - "android/**"
+      - ".github/workflows/android-release-readiness.yml"
+
+concurrency:
+  group: android-release-readiness-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  release-readiness:
+    runs-on: ubuntu-latest
+    env:
+      MAPS_API_KEY: ci-placeholder-maps-not-used-at-runtime
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Place Firebase config for CI
+        run: cp app/google-services.json.example app/google-services.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Match versionName to base branch X.Y.Z
+        working-directory: ${{ github.workspace }}
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: bash android/scripts/ci-release-version-check.sh
+
+      - name: Release lint and unit tests
+        run: chmod +x ./gradlew && ./gradlew lintRelease testReleaseUnitTest --no-daemon

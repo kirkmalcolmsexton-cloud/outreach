@@ -16,7 +16,7 @@ Release and hotfix branches are created only when cutting a release or hotfix �
 Pick one style and document it for contributors:
 
 - **`feature/<short-description>`**, or  
-- **`SCRUM-123-short-description`** (ticket prefix).
+- **`SCRUM-123-short-description`** (ticket prefix — keys match **[Jira](https://kirkmalcolmsexton.atlassian.net)**).
 
 Semantic version in **`release/X.Y.Z`** and **`hotfix/X.Y.Z`** matches **`android/app/build.gradle.kts`** **`versionName`** when those branches ship.
 
@@ -45,7 +45,7 @@ Keep this information **out of git** (password manager or internal doc). Replace
 | Upload keystore file | (path or escrow reference) |
 | Keystore passphrase | |
 | Play App Signing: app signing key held by | Google / note |
-| GitHub Actions secrets (Phase 2 CD) | Not configured until Phase 2 |
+| GitHub Actions secrets (Phase 2 CD) | See **[`github-actions-secrets.md`](github-actions-secrets.md)** — current CI uses none beyond `GITHUB_TOKEN` |
 
 ## 5. After Phase 1
 
