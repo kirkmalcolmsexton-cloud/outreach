@@ -283,9 +283,13 @@ private fun OutreachRoot(uiAutomationConfig: UiAutomationConfig = UiAutomationCo
                             )
                         }
                     }
-                    val resolvedAuthState = remember(uiAutomationConfig.forcedAuthState) {
+                    val resolvedAuthState = remember(
+                        uiAutomationConfig.effectiveForcedAuthState,
+                        uiAutomationConfig.mockSignedInEmail
+                    ) {
                         resolveAuthUiState(
-                            forcedAuthState = uiAutomationConfig.forcedAuthState
+                            forcedAuthState = uiAutomationConfig.effectiveForcedAuthState,
+                            mockSignedInEmail = uiAutomationConfig.mockSignedInEmail
                         )
                     }
                     IconButton(
@@ -321,7 +325,7 @@ private fun OutreachRoot(uiAutomationConfig: UiAutomationConfig = UiAutomationCo
                                 text = { Text("Switch profile") },
                                 onClick = {
                                     profileMenuExpanded = false
-                                    signOutCurrentSession(context, uiAutomationConfig.forcedAuthState)
+                                    signOutCurrentSession(context, uiAutomationConfig.effectiveForcedAuthState)
                                     showLoginGate = true
                                 }
                             )
@@ -330,7 +334,7 @@ private fun OutreachRoot(uiAutomationConfig: UiAutomationConfig = UiAutomationCo
                                 text = { Text("Logout") },
                                 onClick = {
                                     profileMenuExpanded = false
-                                    signOutCurrentSession(context, uiAutomationConfig.forcedAuthState)
+                                    signOutCurrentSession(context, uiAutomationConfig.effectiveForcedAuthState)
                                     showLoginGate = false
                                 }
                             )
@@ -599,12 +603,14 @@ private data class AuthUiState(
 )
 
 private fun resolveAuthUiState(
-    forcedAuthState: UiAutomationConfig.ForcedAuthState?
+    forcedAuthState: UiAutomationConfig.ForcedAuthState?,
+    mockSignedInEmail: String = UiAutomationConfig.DEFAULT_MOCK_USER_EMAIL
 ): AuthUiState {
+    val displayEmail = mockSignedInEmail.ifBlank { UiAutomationConfig.DEFAULT_MOCK_USER_EMAIL }
     return when (forcedAuthState) {
         UiAutomationConfig.ForcedAuthState.SIGNED_IN -> AuthUiState(
             isSignedIn = true,
-            userLine = "ui-test@outreach.dev"
+            userLine = displayEmail
         )
         UiAutomationConfig.ForcedAuthState.SIGNED_OUT -> AuthUiState(
             isSignedIn = false,

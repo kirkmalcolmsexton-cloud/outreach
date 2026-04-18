@@ -52,6 +52,23 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         resValue("string", "google_maps_key", mapsApiKey)
+
+        // Map CLI project properties into the instrumentation Bundle (AGP DSL; avoids nested
+        // -Pandroid.testInstrumentationRunnerArguments.* keys and configuration-cache warnings).
+        val outreachMockEmail = sequenceOf(
+            providers.gradleProperty("outreachMockUserEmail").orNull,
+            project.findProperty("outreachMockUserEmail")?.toString()
+        ).firstOrNull { !it.isNullOrBlank() }?.trim()
+        if (!outreachMockEmail.isNullOrEmpty()) {
+            testInstrumentationRunnerArguments["outreach.ui_test.mock_user_email"] = outreachMockEmail
+        }
+        val authResolution = sequenceOf(
+            providers.gradleProperty("outreachAuthResolution").orNull,
+            project.findProperty("outreachAuthResolution")?.toString()
+        ).firstOrNull { !it.isNullOrBlank() }?.trim()?.lowercase()
+        if (authResolution == "mock" || authResolution == "real") {
+            testInstrumentationRunnerArguments["outreach.ui_test.auth_resolution"] = authResolution
+        }
     }
 
     buildTypes {
@@ -80,6 +97,9 @@ android {
 }
 
 dependencies {
+    // InstrumentationRegistry.getArguments() for UiAutomationConfig merge (same Bundle as tests); guarded at runtime when not instrumented.
+    implementation("androidx.test:core:1.6.1")
+
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")

@@ -5,10 +5,15 @@ import android.content.Intent
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.rules.ActivityScenarioRule
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import com.google.firebase.auth.FirebaseAuth
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -137,5 +142,68 @@ class AppShellForcedSignedInIntentTest {
         composeRule.onNodeWithTag(TestTags.PROFILE_MENU_SWITCH).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.MODE_LIST).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.MAP_LIST).assertIsDisplayed()
+    }
+}
+
+class AppShellMockSignedInConfigurableEmailTest {
+
+    private val intent =
+        Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java).apply {
+            putExtra(UiAutomationConfig.EXTRA_FORCED_AUTH_STATE, "signed_in")
+            putExtra(UiAutomationConfig.EXTRA_AUTH_RESOLUTION, "mock")
+            putExtra(UiAutomationConfig.EXTRA_SKIP_STARTUP_DELAY, true)
+            putExtra(UiAutomationConfig.EXTRA_HOME_VIEW_MODE, "list")
+        }
+
+    private val activityScenarioRule = ActivityScenarioRule<MainActivity>(intent)
+    private val composeRule = AndroidComposeTestRule(
+        activityRule = activityScenarioRule,
+        activityProvider = ::getMainActivityFromScenarioRule
+    )
+    private val permissionRule =
+        GrantPermissionRule.grant(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+
+    @get:Rule
+    val chain: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule)
+
+    @Before
+    fun waitForComposeReady() {
+        composeRule.waitForSemanticTree()
+    }
+
+    @Test
+    fun mockSignedIn_showsConfiguredEmailInProfileMenu() {
+        val args = InstrumentationRegistry.getArguments()
+        val authResolution = args.getString(UiAutomationConfig.EXTRA_AUTH_RESOLUTION)?.lowercase()
+        composeRule.onNodeWithTag(TestTags.PROFILE_BUTTON).performClick()
+
+        if (authResolution == "real") {
+            val configuredEmail =
+                args.getString(UiAutomationConfig.EXTRA_MOCK_USER_EMAIL)?.trim()?.takeIf { it.isNotEmpty() }
+            val firebaseUser = FirebaseAuth.getInstance().currentUser
+            assertNotNull(
+                "Real auth requires a signed-in Firebase user on this device. " +
+                    "currentUser is null (wrong password, cancelled sign-in, or signed out).",
+                firebaseUser
+            )
+            val user = firebaseUser!!
+            if (configuredEmail != null) {
+                assertEquals(
+                    "Signed-in email must match -PoutreachMockUserEmail when both are used with real auth.",
+                    configuredEmail.lowercase(),
+                    user.email?.lowercase()
+                )
+            }
+            val profileLine = user.email ?: user.displayName ?: error("Signed-in user has no email or display name")
+            composeRule.onNodeWithText(profileLine).assertIsDisplayed()
+        } else {
+            val expectedEmail =
+                args.getString(UiAutomationConfig.EXTRA_MOCK_USER_EMAIL)?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: UiAutomationConfig.DEFAULT_MOCK_USER_EMAIL
+            composeRule.onNodeWithText(expectedEmail).assertIsDisplayed()
+        }
     }
 }
