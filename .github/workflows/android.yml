@@ -95,7 +95,8 @@ jobs:
           arch: x86_64
           profile: Nexus 6
           script: |
-            set -euo pipefail
+            # android-emulator-runner invokes /usr/bin/sh (dash); pipefail is bash-only.
+            set -eu
             cd "${GITHUB_WORKSPACE}/android"
             chmod +x ./gradlew ./scripts/wait-for-adb-online.sh
             SERIAL="$(adb devices | awk '/^emulator-/ { print $1; exit }')"
