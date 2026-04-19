@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Map device localhost:7747 → host localhost:7747 for debug NDJSON ingest (physical USB).
-# See README — Physical device testing / CLI scripts.
+# See docs/testing-guide.md — Physical device testing / Debug ingest (port 7747).
 
 set -euo pipefail
 

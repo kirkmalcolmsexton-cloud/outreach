@@ -1,4 +1,6 @@
 # Core Android CI: JVM tests, lint, debug compile (verify) + emulator instrumentation.
+# verify and instrumented run in parallel to shorten wall-clock time. Tradeoff: if verify would
+# fail (compile/unit tests), instrumented may still spend time building APKs + emulator (~30+ min).
 # Copy google-services from example so no Firebase secrets are required.
 # Copy gradle.properties from example (real file is gitignored; enables AndroidX flags in CI).
 name: Android CI
@@ -56,7 +58,6 @@ jobs:
         run: chmod +x ./gradlew && ./gradlew check --no-daemon
 
   instrumented:
-    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -66,6 +67,9 @@ jobs:
         working-directory: android
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
 
       - name: Place Firebase config for CI
         run: cp app/google-services.json.example app/google-services.json

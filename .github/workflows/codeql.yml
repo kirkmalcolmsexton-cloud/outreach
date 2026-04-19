@@ -1,0 +1,76 @@
+# CodeQL must compile Java/Kotlin under tracing. Autobuild runs from repo root and fails for this
+# layout (Gradle lives in android/). Mirror android.yml prep, then assembleDebug from android/.
+#
+# Repo setting (required): disable Code scanning "Default setup" while this advanced workflow exists,
+# or SARIF upload fails with "advanced configurations cannot be processed when the default setup is enabled".
+# If that persists, check organization-level security configurations/policies that enforce default setup.
+# See https://docs.github.com/en/code-security/code-scanning/enabling-code-scanning/configuring-default-setup-for-code-scanning
+name: CodeQL
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+  schedule:
+    - cron: "31 8 * * 1"
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze (java-kotlin)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      MAPS_API_KEY: ci-placeholder-maps-not-used-at-runtime
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          build-mode: manual
+          source-root: android
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Place Firebase config for CI
+        run: cp app/google-services.json.example app/google-services.json
+
+      - name: Place Gradle properties for CI
+        run: cp gradle.properties.example gradle.properties
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build for CodeQL
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      # SARIF: `output` is where CodeQL writes results on the runner before upload to Code Scanning.
+      # It does not fix "default setup + advanced" SARIF rejection — disable Default setup on the repo.
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          output: ${{ github.workspace }}/codeql-results
+          checkout_path: ${{ github.workspace }}

@@ -1,0 +1,14 @@
+# Repo-specific gitleaks config (optional allowlists live below).
+title = "Outreach"
+
+[extend]
+useDefault = true
+
+# Default keytool -dname placeholder (not an API key). Legacy commits may still
+# contain this literal; keep it allowlisted for generic-api-key false positives.
+# Note: `${VAR:-CN=...}` can match as secret "-CN=Outreach" (:- prefix), not the full DN.
+[allowlist]
+regexes = [
+  '''CN=Outreach Upload,O=Outreach,C=US''',
+  '''-CN=Outreach''',
+]

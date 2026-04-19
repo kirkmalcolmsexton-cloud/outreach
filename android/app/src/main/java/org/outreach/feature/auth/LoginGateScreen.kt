@@ -32,12 +32,10 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
-import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.GoogleAuthProvider
 import org.outreach.app.BuildConfig
-import org.outreach.debug.agentDebugLog
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -148,18 +146,6 @@ class AuthViewModel(
         task.addOnSuccessListener { account ->
             signInToFirebase(account)
         }.addOnFailureListener { e ->
-            // #region agent log
-            agentDebugLog(
-                hypothesisId = "H2",
-                location = "LoginGateScreen:onGoogleSignInIntentResult",
-                message = "google_sign_in_account_failed",
-                data =
-                    mapOf(
-                        "exClass" to e.javaClass.simpleName,
-                        "isApiException" to (e is ApiException),
-                    ),
-            )
-            // #endregion
             logAuth("GoogleSignIn.getSignedInAccountFromIntent failed", e)
             _error.value = formatGoogleSignInFailure(e)
         }
@@ -254,52 +240,12 @@ class AuthViewModel(
             _error.value = "Missing Google ID token. Verify web client ID setup."
             return
         }
-        val opts = FirebaseApp.getInstance().options
-        // #region agent log
-        agentDebugLog(
-            hypothesisId = "H3_H5",
-            location = "LoginGateScreen:signInToFirebase",
-            message = "pre_signInWithCredential",
-            data =
-                mapOf(
-                    "projectId" to (opts.projectId ?: ""),
-                    "applicationId" to (opts.applicationId ?: ""),
-                    "buildDebug" to BuildConfig.DEBUG,
-                    "hasIdToken" to !token.isNullOrBlank(),
-                ),
-        )
-        // #endregion
         val credential = GoogleAuthProvider.getCredential(token, null)
         viewModelScope.launch {
             auth.signInWithCredential(credential).addOnSuccessListener {
-                // #region agent log
-                agentDebugLog(
-                    hypothesisId = "H_ok",
-                    location = "LoginGateScreen:signInToFirebase",
-                    message = "firebase_signIn_success",
-                    data = mapOf("projectId" to (opts.projectId ?: "")),
-                )
-                // #endregion
                 _session.value = true
                 _error.value = ""
             }.addOnFailureListener { e ->
-                val fe = e as? FirebaseAuthException
-                val msg = e.message.orEmpty()
-                // #region agent log
-                agentDebugLog(
-                    hypothesisId = "H1_H4",
-                    location = "LoginGateScreen:signInWithCredential",
-                    message = "firebase_signIn_failed",
-                    data =
-                        mapOf(
-                            "errorCode" to (fe?.errorCode ?: "not_firebase_auth"),
-                            "exClass" to e.javaClass.simpleName,
-                            "msgHasExpired" to msg.contains("expired", ignoreCase = true),
-                            "msgHasApiKey" to msg.contains("api key", ignoreCase = true),
-                            "msgLen" to msg.length,
-                        ),
-                )
-                // #endregion
                 logAuth("Firebase signInWithCredential failed", e)
                 _error.value = formatFirebaseAuthFailure(e)
             }
