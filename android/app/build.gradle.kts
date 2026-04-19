@@ -1,4 +1,6 @@
+import java.io.File
 import java.util.Properties
+import org.gradle.api.Project
 
 plugins {
     id("com.android.application")
@@ -6,6 +8,45 @@ plugins {
     id("com.google.devtools.ksp")
     id("com.google.gms.google-services")
 }
+
+private data class ReleaseSigningMaterial(
+    val storeFile: File,
+    val storePassword: String,
+    val keyAlias: String,
+    val keyPassword: String,
+)
+
+/** CI: ANDROID_UPLOAD_KEYSTORE_PATH + password/alias env vars. Local: android/keystore.properties. */
+private fun resolveReleaseSigning(androidRoot: Project): ReleaseSigningMaterial? {
+    val envPath = System.getenv("ANDROID_UPLOAD_KEYSTORE_PATH")?.trim()?.takeIf { it.isNotEmpty() }
+    val envStorePass = System.getenv("ANDROID_UPLOAD_KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
+    val envAlias = System.getenv("ANDROID_UPLOAD_KEY_ALIAS")?.takeIf { it.isNotBlank() }
+    val envKeyPass = System.getenv("ANDROID_UPLOAD_KEY_PASSWORD")?.takeIf { it.isNotBlank() }
+
+    if (!envPath.isNullOrBlank() && envStorePass != null && envAlias != null && envKeyPass != null) {
+        val f = File(envPath)
+        if (!f.isFile) {
+            error(
+                "ANDROID_UPLOAD_KEYSTORE_PATH points to missing file: $envPath\n" +
+                    "(CI must decode the keystore before Gradle runs.)",
+            )
+        }
+        return ReleaseSigningMaterial(f, envStorePass, envAlias, envKeyPass)
+    }
+
+    val propsFile = androidRoot.file("keystore.properties")
+    if (!propsFile.isFile) return null
+    val p = Properties().apply { propsFile.inputStream().use { load(it) } }
+    val storeRelative = p.getProperty("storeFile")?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val storePass = p.getProperty("storePassword") ?: return null
+    val alias = p.getProperty("keyAlias") ?: return null
+    val keyPass = p.getProperty("keyPassword") ?: return null
+    val storeFile = androidRoot.file(storeRelative)
+    if (!storeFile.isFile) return null
+    return ReleaseSigningMaterial(storeFile, storePass, alias, keyPass)
+}
+
+private val releaseSigning = resolveReleaseSigning(project.rootProject)
 
 android {
     val localProperties = Properties().apply {
@@ -74,6 +115,17 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseSigning != null) {
+            create("release") {
+                storeFile = releaseSigning.storeFile
+                storePassword = releaseSigning.storePassword
+                keyAlias = releaseSigning.keyAlias
+                keyPassword = releaseSigning.keyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -81,6 +133,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (releaseSigning != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
@@ -96,6 +151,21 @@ android {
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.15"
+    }
+}
+
+afterEvaluate {
+    tasks.named("bundleRelease").configure {
+        doFirst {
+            require(releaseSigning != null) {
+                """
+                Release signing is not configured.
+                CI: set ANDROID_UPLOAD_* repository secrets and decode keystore to ANDROID_UPLOAD_KEYSTORE_PATH before Gradle runs.
+                Local: copy android/keystore.properties.example to android/keystore.properties.
+                First-time secrets: bash android/scripts/create-upload-keystore-and-gh-secrets.sh
+                """.trimIndent()
+            }
+        }
     }
 }
 

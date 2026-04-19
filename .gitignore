@@ -14,6 +14,9 @@ local.properties
 secrets/outreach-secrets.json
 android/gradle.properties
 
+# Android release signing (copy from keystore.properties.example; do not commit)
+android/keystore.properties
+
 # Android signing and keystore artifacts
 *.jks
 *.keystore

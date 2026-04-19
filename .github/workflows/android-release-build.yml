@@ -1,5 +1,5 @@
-# Decrypt outreach-secrets.json.age, merge release Maps key, bundle release AAB.
-# Requires repository secret OUTREACH_SECRETS_PASSPHRASE; fails fast if missing or wrong.
+# Decrypt outreach-secrets.json.age, merge release Maps key, decode upload keystore, bundle signed release AAB.
+# Requires repository secrets OUTREACH_SECRETS_PASSPHRASE and ANDROID_UPLOAD_* (see docs/release-process.md).
 name: Android release bundle
 
 on:
@@ -35,6 +35,20 @@ jobs:
             exit 1
           fi
 
+      - name: Require ANDROID_UPLOAD_* secrets
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          err=0
+          [ -n "${ANDROID_UPLOAD_KEYSTORE_BASE64:-}" ] || { echo "::error::Repository secret ANDROID_UPLOAD_KEYSTORE_BASE64 is empty or unset."; err=1; }
+          [ -n "${ANDROID_UPLOAD_KEYSTORE_PASSWORD:-}" ] || { echo "::error::Repository secret ANDROID_UPLOAD_KEYSTORE_PASSWORD is empty or unset."; err=1; }
+          [ -n "${ANDROID_UPLOAD_KEY_ALIAS:-}" ] || { echo "::error::Repository secret ANDROID_UPLOAD_KEY_ALIAS is empty or unset."; err=1; }
+          [ -n "${ANDROID_UPLOAD_KEY_PASSWORD:-}" ] || { echo "::error::Repository secret ANDROID_UPLOAD_KEY_PASSWORD is empty or unset."; err=1; }
+          exit "$err"
+
       - name: Install age, jq, expect
         run: sudo apt-get update && sudo apt-get install -y age jq expect
 
@@ -50,10 +64,25 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Decode upload keystore
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+        run: |
+          printf '%s' "$ANDROID_UPLOAD_KEYSTORE_BASE64" | base64 -d > "${RUNNER_TEMP}/outreach-upload.jks"
+          if ! [ -s "${RUNNER_TEMP}/outreach-upload.jks" ]; then
+            echo "::error::Decoded keystore at ${RUNNER_TEMP}/outreach-upload.jks is missing or empty (check ANDROID_UPLOAD_KEYSTORE_BASE64)."
+            exit 1
+          fi
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
       - name: Bundle release
+        env:
+          ANDROID_UPLOAD_KEYSTORE_PATH: ${{ runner.temp }}/outreach-upload.jks
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
         run: chmod +x ./gradlew && ./gradlew bundleRelease --no-daemon
 
       - name: Upload release bundle artifact

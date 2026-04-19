@@ -561,7 +561,7 @@ Outreach development does **not** require that workspace; you can open **`androi
 
 Phase **1** is rulesets + **`CODEOWNERS`** without blocking on CI until jobs exist — **[`docs/github-phase1-setup.md`](docs/github-phase1-setup.md)**. Phase **2** adds **`.github/workflows/`** as below; after green runs, enable **required status checks** using the **exact** strings from the PR **Checks** tab (often **`Workflow name / job id`**, e.g. **`Android CI / verify`**).
 
-**Secrets:** Most jobs need no custom repository secrets. **[`android-release-build.yml`](.github/workflows/android-release-build.yml)** requires **`OUTREACH_SECRETS_PASSPHRASE`** — see **[`docs/github-actions-secrets.md`](docs/github-actions-secrets.md)**.
+**Secrets:** Most jobs need no custom repository secrets. The release bundle workflow needs **`OUTREACH_SECRETS_PASSPHRASE`** and **`ANDROID_UPLOAD_*`** — see **[`docs/release-process.md`](docs/release-process.md#github-repository-secrets)** and **[`docs/github-actions-secrets.md`](docs/github-actions-secrets.md)**.
 
 ### What runs in CI
 
@@ -570,7 +570,7 @@ Phase **1** is rulesets + **`CODEOWNERS`** without blocking on CI until jobs exi
 | **[`.github/workflows/android.yml`](.github/workflows/android.yml)** | **`verify`** | Gradle **wrapper validation**, copy **`google-services.json.example`** → **`google-services.json`**, **`./gradlew check`**. |
 | Same | **`instrumented`** | **`connectedDebugAndroidTest`** with **`-PoutreachAuthResolution=mock`** on an API 34 emulator; runs after **`verify`**. See **`docs/ui-testing.md`**. |
 | **[`.github/workflows/android-release-readiness.yml`](.github/workflows/android-release-readiness.yml)** | **`release-readiness`** | Only when the PR **base** is **`release/**`** or **`hotfix/**`**: **[`android/scripts/ci-release-version-check.sh`](android/scripts/ci-release-version-check.sh)** + **`lintRelease`** + **`testReleaseUnitTest`**. |
-| **[`.github/workflows/android-release-build.yml`](.github/workflows/android-release-build.yml)** | **`bundle-release`** | On **`workflow_dispatch`** or **`push`** to **`release/**` / **`hotfix/**`**: decrypt **`outreach-secrets.json.age`**, **`bundleRelease`**, upload **`.aab`**. |
+| **[`.github/workflows/android-release-build.yml`](.github/workflows/android-release-build.yml)** | **`bundle-release`** | On **`workflow_dispatch`** or **`push`** to **`release/**` / **`hotfix/**`**: decrypt **`outreach-secrets.json.age`**, decode upload keystore, signed **`bundleRelease`**, upload **`.aab`** artifact. |
 | **[`.github/workflows/android-version-bump.yml`](.github/workflows/android-version-bump.yml)** | **`bump`** | Manual: run on a **`release/**` or **`hotfix/**`** branch only; updates **`android/gradle.properties`** **`outreach.version*`** (never **`main`**). |
 | **[`.github/workflows/dependency-review.yml`](.github/workflows/dependency-review.yml)** | **`dependency-review`** | Dependency Review (enable **dependency graph** on the repo). |
 | **[`.github/workflows/secret-scan.yml`](.github/workflows/secret-scan.yml)** | **`gitleaks`** | Secret scanning. |
@@ -601,49 +601,7 @@ When release signing and Play API credentials are stored as **GitHub Actions sec
 
 ## Release process (GitFlow)
 
-This repo follows a **classic GitFlow** workflow: **`main`** holds production-ready history aligned with what ships on **Google Play**; **`develop`** is the integration branch for merged feature work. **CI/CD** (above) automates build/test gates on PRs; **shipping** to Play remains a **human** cut (branch, **`bundleRelease`**, Play Console) unless you add CD workflows and secrets.
-
-**Branches**
-
-| Branch / pattern | Role |
-|------------------|------|
-| **`main`** | Production-ready code. Tag each Play release as **`vX.Y.Z`** on the merge commit that matches what you uploaded. |
-| **`develop`** | Integration target for features; day-to-day PRs merge here first, not directly to **`main`** (except via release/hotfix flows). |
-| **`feature/<name>`** or **`SCRUM-123-short-name`** | Branch from **`develop`**; PR back to **`develop`**. Pick one naming style for the team and keep it consistent. |
-| **`release/X.Y.Z`** | Cut from **`develop`** when preparing a release. **Freeze new features** — only fixes and polish. Bump app version here (see below). |
-| **`hotfix/X.Y.Z`** | Branch from **`main`** for urgent production fixes; merge to **`main`**, tag, then merge **`main` → `develop`** so fixes are not lost. |
-
-**Version numbers** live in **`android/gradle.properties`** (**`outreach.versionCode`**, **`outreach.versionName`**); **`android/app/build.gradle.kts`** wires them into the Android plugin. **`versionCode`** must **always increase** between Play uploads (Play requirement); **`versionName`** is the user-visible semver (**`X.Y.Z`**). Bump them on **`release/`** or **`hotfix/`** branches before building the store artifact.
-
-### Feature work (routine)
-
-1. **`git checkout develop && git pull`**
-2. **`git checkout -b feature/<name>`** (or ticket-prefixed branch name)
-3. Implement, push, open PR **into `develop`**
-4. After review, merge; delete the feature branch
-
-### Play Store release (happy path)
-
-1. Confirm **`develop`** builds and tests (**`./gradlew assembleDebug`**, instrumentation tests per [CLI quick reference](#cli-quick-reference)) and fix blockers.
-2. **`git checkout develop && git pull`** then **`git checkout -b release/X.Y.Z`** (same **`X.Y.Z`** as **`versionName`** — no **`v`** in the branch name).
-3. Edit **`android/gradle.properties`**: set **`outreach.versionName`** to **`X.Y.Z`** and bump **`outreach.versionCode`** by at least **1** vs the last upload.
-4. Stabilize on **`release/X.Y.Z`** with bugfixes only — no new features unless you abandon this release branch and cut a new one later.
-5. QA using **`docs/release-checklist.md`** and sign-in/maps checks (**`docs/google-oauth-checklist.md`**). From **`android/`**, build a signed bundle: **`./gradlew bundleRelease`** (configure **release signing** on the machine or builder you use; the repo does not commit **`signingConfigs`**).
-6. Upload the **AAB** to Play **Internal** or **Closed testing** first. Ensure **OAuth / Maps / Firebase** allow your **release signing SHA-1** (debug vs upload vs Play App Signing differ — see **`docs/google-oauth-checklist.md`**).
-7. When ready, merge **`release/X.Y.Z` → `main`** via PR (or your team’s reviewed merge process).
-8. On **`main`**, tag the release commit: **`git tag -a vX.Y.Z -m "Outreach X.Y.Z"`**.
-9. **`git checkout develop && git merge main`** so **`develop`** includes any release fixes.
-10. Delete the **`release/X.Y.Z`** branch after merges complete.
-
-### Hotfix (production emergency)
-
-1. **`git checkout main && git pull`**
-2. **`git checkout -b hotfix/X.Y.Z`** — bump **`outreach.versionCode`** and patch **`outreach.versionName`** in **`android/gradle.properties`**, fix, **`./gradlew bundleRelease`**, upload to Play.
-3. Merge **`hotfix/X.Y.Z` → `main`**, tag **`vX.Y.Z`**, then **`git checkout develop && git merge main`** (or cherry-pick equivalent) so **`develop`** stays in sync.
-
-### Secrets and signing (not tied to Git branches)
-
-Store credentials are **orthogonal** to GitFlow: **`google-services.json`** and **`MAPS_API_KEY`** come from **`./scripts/setup-secrets.sh`** or manual setup ([**Firebase config**](#5-firebase-config-required-for-google-sign-in--firebase)). Document internally who holds the **upload keystore** and how **Play App Signing** is configured.
+Branching, versioning, **first-time** keystore and GitHub secrets, Play uploads, and CI signing are documented in **[`docs/release-process.md`](docs/release-process.md)**.
 
 ---
 
@@ -652,7 +610,7 @@ Store credentials are **orthogonal** to GitFlow: **`google-services.json`** and 
 - **Jira** — [kirkmalcolmsexton.atlassian.net](https://kirkmalcolmsexton.atlassian.net)
 - **CI/CD and PR merge gates** — [CI/CD (GitHub Actions)](#cicd-github-actions) (this README); **secrets reference** — [`docs/github-actions-secrets.md`](docs/github-actions-secrets.md)
 - **GitHub Phase 1** (rulesets, Code Owners, no required CI yet) — [`docs/github-phase1-setup.md`](docs/github-phase1-setup.md)
-- **Release branching and Play uploads** — [Release process (GitFlow)](#release-process-gitflow) (this README)
+- **Release branching, Play uploads, repository secrets** — [`docs/release-process.md`](docs/release-process.md)
 - **`docs/android-architecture.md`**
 - **`docs/sync-and-collab.md`**
 - **`docs/release-checklist.md`**
