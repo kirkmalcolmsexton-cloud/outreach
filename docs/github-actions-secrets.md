@@ -12,7 +12,7 @@ Upload signing can be configured in **repo mode** (committed **`secrets/upload-k
 
 | Secret | Consumers |
 |--------|-----------|
-| **`OUTREACH_SECRETS_PASSPHRASE`** | **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** — passphrase for **`secrets/outreach-secrets.json.age`** and (**repo mode**) **`secrets/upload-keystore.jks.age`** (same passphrase as local **`encrypt-secrets.sh`** / **`encrypt-age-passphrase.sh`** / **`setup-secrets.sh`**). If unset or wrong, the release bundle job fails before Gradle. |
+| **`OUTREACH_SECRETS_PASSPHRASE`** | **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** — passphrase for **`secrets/outreach-secrets.json.age`** and (**repo mode**) **`secrets/upload-keystore.jks.age`** (same passphrase as local **`encrypt-secrets.sh`** / **`encrypt-upload-keystore-age.sh`** / **`setup-secrets.sh`**). If unset or wrong, the release bundle job fails before Gradle. |
 
 ### Legacy upload signing (optional if using repo mode)
 

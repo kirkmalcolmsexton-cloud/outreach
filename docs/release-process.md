@@ -57,7 +57,8 @@ The workflow prefers **repo mode** when **`secrets/upload-keystore.jks.age`** ex
 
 1. **`cd`** to the repo root (same folder as **`android/`**).
 2. Install **JDK**, **`age`**, **`expect`**, **`jq`** (encrypt path / instructions).
-3. Run: **`OUTREACH_SIGNING_REPO_MODE=1`** **`bash android/scripts/create-upload-keystore-and-gh-secrets.sh`** (set **`OUTREACH_SECRETS_PASSPHRASE`** for non-interactive **`age -p`**, or use a TTY).
+3. Run: **`OUTREACH_SIGNING_REPO_MODE=1`** **`bash android/scripts/create-upload-keystore-and-gh-secrets.sh`** (set **`OUTREACH_SECRETS_PASSPHRASE`** for non-interactive **`age -p`**, or use a TTY).  
+   **Or** if you already have a plaintext upload **`.jks`**: **`OUTREACH_SECRETS_PASSPHRASE=... bash android/scripts/encrypt-upload-keystore-age.sh`** (no path arguments — reads **`~/.config/outreach/upload-keystore.jks`** by default, writes **`secrets/upload-keystore.jks.age`**; set **`OUTREACH_UPLOAD_KEYSTORE_PATH`** to use another **`.jks`**).
 4. Merge the printed **`android_upload_signing`** object into **`secrets/outreach-secrets.json`**, run **`bash android/scripts/encrypt-secrets.sh`**, and commit **`secrets/outreach-secrets.json.age`** + **`secrets/upload-keystore.jks.age`**. Never commit plaintext **`*.jks`** or **`outreach-secrets.json`** (both gitignored where applicable).
 5. Back up the local **`.jks`** copy from the script output path (default **`~/.config/outreach/upload-keystore.jks`**) off-disk.
 

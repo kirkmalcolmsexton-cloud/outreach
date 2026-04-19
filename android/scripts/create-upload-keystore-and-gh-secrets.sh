@@ -123,7 +123,7 @@ echo "Key alias:       ${KEY_ALIAS}"
 if [[ "${DRY_RUN}" == "1" ]]; then
   echo "[dry-run] Would run keytool -genkeypair ... -> ${KEYSTORE_PATH}"
   if [[ "${REPO_MODE}" == "1" ]]; then
-    echo "[dry-run] Would encrypt to ${OUTREACH_ROOT}/secrets/upload-keystore.jks.age (encrypt-age-passphrase.sh)"
+    echo "[dry-run] Would encrypt to ${OUTREACH_ROOT}/secrets/upload-keystore.jks.age (encrypt-upload-keystore-age.sh)"
   else
     echo "[dry-run] Would gh secret set ANDROID_UPLOAD_KEYSTORE_BASE64 ANDROID_UPLOAD_KEYSTORE_PASSWORD ..."
   fi
@@ -155,7 +155,7 @@ if [[ "${REPO_MODE}" == "1" ]]; then
     echo "::error::jq required for repo mode instructions. brew install jq / apt install jq" >&2
     exit 1
   }
-  bash "${SCRIPT_DIR}/encrypt-age-passphrase.sh" "${KEYSTORE_PATH}" "${REPO_JKS_AGE}"
+  OUTREACH_UPLOAD_KEYSTORE_PATH="${KEYSTORE_PATH}" bash "${SCRIPT_DIR}/encrypt-upload-keystore-age.sh"
 
   SNIPPET="$(jq -n \
     --arg alias "${KEY_ALIAS}" \
