@@ -33,7 +33,7 @@ See **[`docs/testing-process.md`](testing-process.md)** for when to add physical
 
 ## Release builds (AAB) and signing
 
-Release artifacts use **`bundleRelease`**. Locally, signing can use **`android/keystore.properties`** (gitignored); CI uses environment variables **`ANDROID_UPLOAD_*`** set from GitHub secrets.
+Release artifacts use **`bundleRelease`**. Locally, signing can use **`android/keystore.properties`** (gitignored); CI resolves **`ANDROID_UPLOAD_*`** Gradle env vars from **`secrets/outreach-secrets.json`** (**`android_upload_signing`**) plus **`secrets/upload-keystore.jks.age`**, or from legacy GitHub **`ANDROID_UPLOAD_*`** secrets (**[`github-actions-secrets.md`](github-actions-secrets.md)**).
 
 Authoritative steps for keystore custody, **`bundleRelease`**, and Play uploads: **[`docs/release-process.md`](release-process.md)**. Signing wiring is implemented in **`android/app/build.gradle.kts`**.
 

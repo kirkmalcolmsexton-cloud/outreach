@@ -58,7 +58,7 @@ Status check names in the GitHub UI are usually **`Workflow display name / job i
 | [`.github/workflows/android.yml`](../.github/workflows/android.yml) | **Android CI** | **`verify`** | Gradle wrapper validation, **`google-services.json`** from example, **`./gradlew check`**. |
 | Same | Same | **`instrumented`** | API **34** emulator, **`connectedDebugAndroidTest`** with **`-PoutreachAuthResolution=mock`** after **`verify`**. |
 | [`.github/workflows/android-release-readiness.yml`](../.github/workflows/android-release-readiness.yml) | **Android release readiness** | **`release-readiness`** | When PR **base** is **`release/**`** or **`hotfix/**`**: version check script, **`lintRelease`**, **`testReleaseUnitTest`**. |
-| [`.github/workflows/android-release-build.yml`](../.github/workflows/android-release-build.yml) | **Android release bundle** | **`bundle-release`** | **`workflow_dispatch`** or **push** to **`release/**`** / **`hotfix/**`**: decrypt **`.age`**, upload keystore from secrets, **`bundleRelease`**, upload **`.aab`** artifact. Needs repo secrets — see **[`github-actions-secrets.md`](github-actions-secrets.md)**. |
+| [`.github/workflows/android-release-build.yml`](../.github/workflows/android-release-build.yml) | **Android release bundle** | **`bundle-release`** | **`workflow_dispatch`** or **push** to **`release/**`** / **`hotfix/**`**: decrypt **`outreach-secrets.json.age`**, materialize upload keystore (**repo** **`.age`** file or legacy GitHub secrets), **`bundleRelease`**, upload **`.aab`**. See **[`github-actions-secrets.md`](github-actions-secrets.md)**. |
 | [`.github/workflows/android-version-bump.yml`](../.github/workflows/android-version-bump.yml) | **Android version bump** | **`bump`** | Manual only on **`release/**`** / **`hotfix/**`**: bumps **`outreach.version*`** in **`gradle.properties`** (never **`main`**). |
 | [`.github/workflows/dependency-review.yml`](../.github/workflows/dependency-review.yml) | Dependency Review | **`dependency-review`** | Supply-chain review (requires dependency graph where applicable). |
 | [`.github/workflows/secret-scan.yml`](../.github/workflows/secret-scan.yml) | **Secret Scan** | **`gitleaks`** | Secret scanning. |
@@ -133,7 +133,7 @@ Branch:
 gh workflow run "Android CI" --ref my-branch
 ```
 
-**Release bundle** requires secrets on the repo; ensure **`OUTREACH_SECRETS_PASSPHRASE`** and **`ANDROID_UPLOAD_*`** are set ([**`github-actions-secrets.md`](github-actions-secrets.md)**).
+**Release bundle** requires **`OUTREACH_SECRETS_PASSPHRASE`**, plus either repo-mode signing (**`secrets/upload-keystore.jks.age`** + **`android_upload_signing`** in plaintext JSON behind **`outreach-secrets.json.age`**) or all legacy **`ANDROID_UPLOAD_*`** secrets ([**`github-actions-secrets.md`](github-actions-secrets.md)**).
 
 ### PR checks from the terminal
 
