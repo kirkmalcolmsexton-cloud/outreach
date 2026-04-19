@@ -134,10 +134,13 @@ fi
 
 echo "Keystore created. Back up ${KEYSTORE_PATH} securely (password manager, encrypted backup)—GitHub only stores automation copies."
 
+# GNU uses base64 -w0 FILE; macOS/BSD requires base64 -i FILE or stdin (positional FILE is invalid).
 if base64 --help 2>&1 | grep -q -- '-w'; then
   B64="$(base64 -w0 "${KEYSTORE_PATH}")"
+elif base64 --help 2>&1 | grep -q -- '-i'; then
+  B64="$(base64 -i "${KEYSTORE_PATH}" | tr -d '\n')"
 else
-  B64="$(base64 "${KEYSTORE_PATH}" | tr -d '\n')"
+  B64="$(base64 <"${KEYSTORE_PATH}" | tr -d '\n')"
 fi
 
 printf '%s' "${B64}" | gh secret set ANDROID_UPLOAD_KEYSTORE_BASE64
