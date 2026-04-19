@@ -660,7 +660,7 @@ fun MapScreen(
             }
             if (hasMapsApiMetadata && mapsKeyLooksLikeGradleTemplate) {
                 Text(
-                    "Map API key is still a template or CI placeholder. Set a real Google Maps Platform key (AIza…) in MAPS_API_KEY / maps_api_key.",
+                    "Map API key is still a template or CI placeholder. Set a real Google Maps Platform key (AIza…) in MAPS_API_KEY / development_api_key.",
                     modifier = Modifier.padding(top = 12.dp),
                     color = MaterialTheme.colorScheme.error
                 )

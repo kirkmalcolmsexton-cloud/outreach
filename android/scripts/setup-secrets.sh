@@ -33,6 +33,9 @@ Usage: $(basename "$0") [PATH_TO_JSON_OR_AGE]
   Passphrase for .age files:
     Set OUTREACH_SECRETS_PASSPHRASE, or run in a terminal and enter when age prompts.
 
+  Which Maps key merges into MAPS_API_KEY / local.properties:
+    OUTREACH_MAPS_KEY_FIELD=development_api_key (default) or release_api_key
+
 EOF
 }
 
@@ -154,8 +157,12 @@ jq empty "${JSON_PATH}" || {
   echo "setup-secrets: invalid JSON: ${INPUT}" >&2
   exit 1
 }
-jq -e '.maps_api_key | type == "string" and length > 0' "${JSON_PATH}" >/dev/null 2>&1 || {
-  echo "setup-secrets: .maps_api_key must be a non-empty string" >&2
+jq -e '.development_api_key | type == "string" and length > 0' "${JSON_PATH}" >/dev/null 2>&1 || {
+  echo "setup-secrets: .development_api_key must be a non-empty string" >&2
+  exit 1
+}
+jq -e '.release_api_key | type == "string" and length > 0' "${JSON_PATH}" >/dev/null 2>&1 || {
+  echo "setup-secrets: .release_api_key must be a non-empty string" >&2
   exit 1
 }
 jq -e '.google_services | type == "object"' "${JSON_PATH}" >/dev/null 2>&1 || {
@@ -163,11 +170,17 @@ jq -e '.google_services | type == "object"' "${JSON_PATH}" >/dev/null 2>&1 || {
   exit 1
 }
 
+MAPS_FIELD="${OUTREACH_MAPS_KEY_FIELD:-development_api_key}"
+if [[ "${MAPS_FIELD}" != "development_api_key" && "${MAPS_FIELD}" != "release_api_key" ]]; then
+  echo "setup-secrets: OUTREACH_MAPS_KEY_FIELD must be development_api_key or release_api_key" >&2
+  exit 1
+fi
+
 GOOGLE_SERVICES_OUT="${ANDROID_DIR}/app/google-services.json"
 LOCAL_PROPS="${ANDROID_DIR}/local.properties"
 
 jq '.google_services' "${JSON_PATH}" > "${GOOGLE_SERVICES_OUT}"
-MAPS_KEY="$(jq -r '.maps_api_key' "${JSON_PATH}")"
+MAPS_KEY="$(jq --arg f "${MAPS_FIELD}" -r '.[$f]' "${JSON_PATH}")"
 
 TMP_PROPS="$(mktemp)"
 if [[ -f "${LOCAL_PROPS}" ]]; then
@@ -182,4 +195,4 @@ fi
 rm -f "${TMP_PROPS}"
 
 echo "setup-secrets: wrote ${GOOGLE_SERVICES_OUT}"
-echo "setup-secrets: merged MAPS_API_KEY into ${LOCAL_PROPS}"
+echo "setup-secrets: merged MAPS_API_KEY (${MAPS_FIELD}) into ${LOCAL_PROPS}"

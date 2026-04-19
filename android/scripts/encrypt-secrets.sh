@@ -60,8 +60,12 @@ jq empty "${INPUT_JSON}" || {
   echo "encrypt-secrets: invalid JSON: ${INPUT_JSON}" >&2
   exit 1
 }
-jq -e '.maps_api_key | type == "string" and length > 0' "${INPUT_JSON}" >/dev/null 2>&1 || {
-  echo "encrypt-secrets: .maps_api_key must be a non-empty string" >&2
+jq -e '.development_api_key | type == "string" and length > 0' "${INPUT_JSON}" >/dev/null 2>&1 || {
+  echo "encrypt-secrets: .development_api_key must be a non-empty string" >&2
+  exit 1
+}
+jq -e '.release_api_key | type == "string" and length > 0' "${INPUT_JSON}" >/dev/null 2>&1 || {
+  echo "encrypt-secrets: .release_api_key must be a non-empty string" >&2
   exit 1
 }
 jq -e '.google_services | type == "object"' "${INPUT_JSON}" >/dev/null 2>&1 || {
