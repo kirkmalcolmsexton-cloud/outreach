@@ -20,26 +20,29 @@ android {
             file.inputStream().use { load(it) }
         }
     }
-    val parentGradleProperties = Properties().apply {
-        val file = project.file("../gradle.properties")
-        if (file.exists()) {
-            file.inputStream().use { load(it) }
-        }
-    }
     val userGradleProperties = Properties().apply {
         val file = File(System.getProperty("user.home"), ".gradle/gradle.properties")
         if (file.exists()) {
             file.inputStream().use { load(it) }
         }
     }
+    // Do NOT use providers.gradleProperty("MAPS_API_KEY"): it merges android/gradle.properties and wins
+    // before we read local.properties — so a template MAPS_API_KEY there overrides setup-secrets.
+    // CLI: only explicit -P MAPS_API_KEY=… (see gradle.startParameter.projectProperties).
+    val mapsApiKeyFromCli = gradle.startParameter.projectProperties["MAPS_API_KEY"]
     val mapsApiKey = sequenceOf(
-        providers.gradleProperty("MAPS_API_KEY").orNull,
-        rootGradleProperties.getProperty("MAPS_API_KEY"),
-        parentGradleProperties.getProperty("MAPS_API_KEY"),
-        userGradleProperties.getProperty("MAPS_API_KEY"),
+        mapsApiKeyFromCli,
         localProperties.getProperty("MAPS_API_KEY"),
-        System.getenv("MAPS_API_KEY")
+        System.getenv("MAPS_API_KEY"),
+        rootGradleProperties.getProperty("MAPS_API_KEY"),
+        userGradleProperties.getProperty("MAPS_API_KEY"),
     ).firstOrNull { !it.isNullOrBlank() } ?: ""
+
+    val outreachVersionCode =
+        rootProject.findProperty("outreach.versionCode")?.toString()?.toIntOrNull() ?: 1
+    val outreachVersionName =
+        rootProject.findProperty("outreach.versionName")?.toString()?.trim().orEmpty()
+            .ifEmpty { "0.1.0" }
 
     namespace = "org.outreach.app"
     compileSdk = 34
@@ -48,8 +51,8 @@ android {
         applicationId = "org.outreach.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = outreachVersionCode
+        versionName = outreachVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         resValue("string", "google_maps_key", mapsApiKey)
 

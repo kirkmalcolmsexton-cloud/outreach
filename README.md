@@ -2,6 +2,8 @@
 
 **Repository:** [github.com/kirkmalcolmsexton-cloud/outreach](https://github.com/kirkmalcolmsexton-cloud/outreach)
 
+**Jira:** [kirkmalcolmsexton.atlassian.net](https://kirkmalcolmsexton.atlassian.net) (issues and sprints; **`SCRUM-*`** keys in branch names refer to this site.)
+
 Outreach is an **Android** app for teams that work from a **Google Sheet** of households: sign in with Google, pick the spreadsheet and zip-code tabs in settings, then use a **map or list** home screen to plan routes and log visits. Data **syncs from Sheets into local storage** for offline use; visit changes are **queued and flushed** when the network is back. A **Firestore** layer adds collaboration scaffolding (presence and activity) without replacing the sheet as the source of truth.
 
 Stack highlights: **Kotlin**, **Jetpack Compose**, **Room + DataStore + WorkManager**, Google Sign-In with Sheets/Drive scopes.
@@ -14,10 +16,12 @@ The Android app lives in **`android/`** as a **single-module** project (root Gra
 
 | Who you are | Where to start |
 |---------------|----------------|
-| **New to Android** — viewing this on GitHub and need the shortest path to **build** and run **tests on the emulator** | Prep: [**Before you clone**](#before-you-clone), then [**First-time setup (emulator)**](#first-time-setup-emulator) |
-| **Past first setup** — exploring Outreach using a **real phone** over USB | [**Physical device testing**](#physical-device-testing) |
+| **New to Android** — viewing this on GitHub and need the shortest path to **build** and run **tests on the emulator** | Prep: [**Before you clone**](#before-you-clone), then [**First-time setup (emulator)**](#first-time-setup-emulator). If you already have **`secrets/outreach-secrets.json.age`** and a passphrase from the team, you can [**build from the terminal with `~/etc/outreach.env`**](#6b-terminal-build-with-etcoutreachenv-team-age-file) after [**Firebase config**](#5-firebase-config-required-for-google-sign-in--firebase) basics (**`age`** / **`jq`**). |
+| **Past first setup** — exploring Outreach using a **real phone** over USB | [**Physical device testing**](#physical-device-testing) (includes [**debug ingest**](#debug-ingest-port-7747)) |
 | **Comfortable with Android** — you want **commands, flags, and scripts** without extra narrative | [**CLI quick reference**](#cli-quick-reference) |
 | **Cursor / multi-root workspace** — you use the workspace repo next to Outreach | [**Cursor workspace**](#cursor-workspace) |
+| **Cutting a Play release / branching** — maintainers integrating and shipping | [**Release process (GitFlow)**](#release-process-gitflow) |
+| **CI/CD & PR checks** — GitHub Actions, merge gates | [**CI/CD (GitHub Actions)**](#cicd-github-actions) |
 
 ---
 
@@ -235,7 +239,7 @@ This writes **`app/google-services.json`** and merges **`MAPS_API_KEY`** into **
 
 **Maintainers — create or refresh the encrypted file**
 
-Assemble plaintext JSON with the same shape as **`secrets/outreach-secrets.example.json`** (schema: **`docs/outreach-secrets.schema.json`**). Include the full Firebase **`google_services`** object from your downloaded **`google-services.json`** and your Maps key as **`maps_api_key`**.
+Assemble plaintext JSON with the same shape as **`secrets/outreach-secrets.example.json`** (schema: **`docs/outreach-secrets.schema.json`**). Include the full Firebase **`google_services`** object from your downloaded **`google-services.json`**, a dev/feature Maps key as **`development_api_key`**, and a release Maps key as **`release_api_key`**.
 
 ```bash
 # From repo root — copy and edit secrets/outreach-secrets.json (gitignored)
@@ -246,6 +250,22 @@ Assemble plaintext JSON with the same shape as **`secrets/outreach-secrets.examp
 
 Set **`OUTREACH_SECRETS_PASSPHRASE`** for non-interactive encryption (requires **`expect`**, included on macOS; Linux: **`sudo apt install expect`**).
 
+**Extract plaintext `outreach-secrets.json` from `outreach-secrets.json.age`**
+
+Use **`age`** with the same passphrase you use for encryption (install **`age`** as in step 1). From the **`outreach`** repo root:
+
+```bash
+age -d -o secrets/outreach-secrets.json secrets/outreach-secrets.json.age
+```
+
+You will be prompted for the passphrase; **`secrets/outreach-secrets.json`** is **gitignored** so it is not committed after editing. To print JSON to the terminal only (no output file):
+
+```bash
+age -d secrets/outreach-secrets.json.age
+```
+
+Headless decrypt (scripted/CI) uses **`OUTREACH_SECRETS_PASSPHRASE`** and **`expect`** the same way as **`android/scripts/setup-secrets.sh`** and **`encrypt-secrets.sh`**; for day-to-day editing, prefer an interactive terminal and a local **`secrets/outreach-secrets.json`** you delete or re-encrypt when done.
+
 **Fallback — manual Firebase download**
 
 If you do not use the consolidated file:
@@ -254,6 +274,7 @@ If you do not use the consolidated file:
 2. Replace with your real **`google-services.json`** from the Firebase console.
 3. Add **`MAPS_API_KEY=…`** to **`android/local.properties`** or **`~/.gradle/gradle.properties`** (see **`android/gradle.properties`**).  
    - Keep these files **local-only**; do not commit them.
+   - **Routing / arrival times** on the map use the **Directions API** with the same key: in Google Cloud, enable **Directions API** for the project, keep **billing** on for Maps Platform, and under the key’s **API restrictions** allow **Directions API** (not only Maps SDK for Android).
 
 ### 6. Sanity check: build
 
@@ -275,6 +296,49 @@ cd android
 ```
 
 If this succeeds, JDK + SDK + Gradle are correct.
+
+### 6b. Terminal build with `~/etc/outreach.env` (team `.age` file)
+
+Use this when your team shares **`secrets/outreach-secrets.json.age`** and a passphrase — one script decrypts to **`secrets/outreach-secrets.json`**, runs **`android/scripts/setup-secrets.sh`** (writes **`app/google-services.json`** and **`MAPS_API_KEY`** in **`local.properties`**), then **`assembleDebug`**.
+
+1. **Ask your admin** for the shared passphrase **`OUTREACH_SECRETS_PASSPHRASE`** (same value used to encrypt the **`.age`** file). Treat it like a password: do not paste it into tickets, chat logs, or the repo.
+
+2. **Create** **`~/etc/outreach.env`** on your machine (**macOS / Linux / Git Bash / WSL** — not PowerShell). Example:
+
+   ```bash
+   mkdir -p ~/etc
+   nano ~/etc/outreach.env   # or vim, VS Code, etc.
+   ```
+
+   Minimum content (use your real passphrase from the admin):
+
+   ```bash
+   # Outreach — local only. chmod 600 this file.
+   export OUTREACH_SECRETS_PASSPHRASE='paste-passphrase-from-admin-here'
+   ```
+
+   Lock down permissions:
+
+   ```bash
+   chmod 600 ~/etc/outreach.env
+   ```
+
+   **Windows:** Use **Git Bash** so **`~/etc`** resolves under your profile the same way as other **`scripts/*.sh`** steps in this README.
+
+3. Install **`age`**, **`jq`**, and **`expect`** if you have not already ([**Firebase config → step 1**](#5-firebase-config-required-for-google-sign-in--firebase); **`expect`** is standard on macOS; **Ubuntu:** **`sudo apt install expect`**).
+
+4. Ensure **`secrets/outreach-secrets.json.age`** is present in your clone (from the team).
+
+5. From the **`outreach`** repo root (**parent** of **`android/`**), run:
+
+   ```bash
+   chmod +x ./scripts/build-with-secrets-from-env.sh   # once
+   ./scripts/build-with-secrets-from-env.sh
+   ```
+
+   The script **errors** if **`~/etc/outreach.env`** is missing, if **`OUTREACH_SECRETS_PASSPHRASE`** is empty after sourcing it, or if decrypt fails (wrong passphrase or missing **`.age`**).
+
+This is equivalent to manually running **`age -d`**, **`setup-secrets.sh`**, and **`./gradlew assembleDebug`**, but wired for automation.
 
 ### 7. Run UI tests on the default Outreach emulator
 
@@ -307,6 +371,7 @@ Prefer setting **`ANDROID_SERIAL`** via **`resolve-outreach-emulator-serial.sh`*
 
 - **Android Studio’s “Android” project view** (Project tool window dropdown) shows **`app`**, **`manifests`**, **`java`**, **`res`**. Opening only the repo root in **VS Code / Cursor** shows flat files — use Studio for the Android layout.
 - **`local.properties`** with **`sdk.dir=...`** is usually created when you open **`android/`** in Studio.
+- Team **`.age`** secrets: put the passphrase only in **`~/etc/outreach.env`** (never in the repo). Use **[**§6b**](#6b-terminal-build-with-etcoutreachenv-team-age-file)** to decrypt, materialize Firebase/Maps files, and **build** in one command.
 
 ---
 
@@ -344,6 +409,23 @@ export ANDROID_SERIAL="$(./scripts/get-device-serial.sh --pick)"
 **`connectedDebugAndroidTest`** installs and runs on **every** online device unless you pin one with **`ANDROID_SERIAL`**. Always set **`ANDROID_SERIAL`** when more than one device appears in **`adb devices`** — otherwise installs can fail or run twice.
 
 Align **`ANDROID_HOME`** with **`sdk.dir`** in **`local.properties`** so **`adb`** and Gradle use the same SDK ([**SDK alignment**](#sdk-alignment) in the quick reference).
+
+### Debug ingest (port 7747)
+
+If you run a **local NDJSON ingest** (or similar) on **`127.0.0.1:7747`**, remember that on a **physical device** that address refers to the phone itself, not your computer.
+
+| Situation | What to do |
+|-----------|------------|
+| **Android Emulator** | The app uses **`10.0.2.2:7747`** to reach the host. **Do not** run **`adb reverse`** for this — the emulator already maps the special alias. |
+| **Physical device (USB)** | Start (or rely on) a **host** tool that listens on **`127.0.0.1:7747`**, then from the **repo root** run **`./scripts/adb-reverse-debug-ingest.sh`**. That sets up **reverse** port forwarding so **`127.0.0.1:7747` on the device** reaches **`127.0.0.1:7747` on your machine**. |
+| **Reconnect / stale adb** | Reverse rules are tied to the **adb** session. Run the script again after **`adb kill-server`**, unplugging the cable, or if logs stop arriving. |
+
+**Multiple devices:** set **`ANDROID_SERIAL`** (same as for Gradle) so **`adb`** targets the correct phone:
+
+```bash
+export ANDROID_SERIAL="$(./scripts/get-device-serial.sh --pick)"
+./scripts/adb-reverse-debug-ingest.sh
+```
 
 ### Auth in tests
 
@@ -383,14 +465,18 @@ Single test class:
 
 ### Scripts
 
+Most paths below assume **`cd outreach/android`**. The **env** build script is the exception: run it from the **`outreach/`** repo root (see last row).
+
 | Script | Purpose |
 |--------|---------|
 | **`./scripts/setup-secrets.sh`** | From **`outreach-secrets.json`** or **`.json.age`**, write **`app/google-services.json`** and merge **`MAPS_API_KEY`** into **`local.properties`** ([**Firebase setup**](#5-firebase-config-required-for-google-sign-in--firebase)). |
 | **`./scripts/encrypt-secrets.sh`** | Maintainer: encrypt plaintext **`secrets/outreach-secrets.json`** → **`secrets/outreach-secrets.json.age`**. |
+| **`../scripts/build-with-secrets-from-env.sh`** | Run from **`outreach/`** repo root (**not** from **`android/`**): source **`~/etc/outreach.env`** (must define **`OUTREACH_SECRETS_PASSPHRASE`**), decrypt **`.age`** → **`secrets/outreach-secrets.json`**, run **`setup-secrets.sh`**, **`./gradlew assembleDebug`** ([**§6b**](#6b-terminal-build-with-etcoutreachenv-team-age-file)). |
 | **`./scripts/start-outreach-emulator.sh`** | Create default AVD if missing; start emulator ([**details**](#start-emulator-without-studio)) |
 | **`./scripts/wait-for-adb-online.sh`** | Block until **`adb`** → **`device`** and boot complete; **`ADB_WAIT_TIMEOUT`** / **`ADB_WAIT_INTERVAL`** |
 | **`./scripts/resolve-outreach-emulator-serial.sh`** | Print **`adb`** serial for the Outreach default AVD (use with **`ANDROID_SERIAL`**) |
 | **`./scripts/get-device-serial.sh`** | Table **`adb devices`**; **`--pick`** one serial; **`--physical`** USB only — **`--help`** |
+| **`./scripts/adb-reverse-debug-ingest.sh`** | **`adb reverse tcp:7747 tcp:7747`** — device **`localhost:7747`** → host **`localhost:7747`** for debug NDJSON ingest (**USB phone**); set **`ANDROID_SERIAL`** if several devices ([**when to use**](#debug-ingest-port-7747)) |
 | **`./scripts/adb_restart.sh`** | **`adb kill-server`** / **`start-server`** (stale adb) |
 
 ### Instrumentation CLI flags
@@ -439,6 +525,7 @@ export PATH="$ANDROID_HOME/platform-tools:$PATH"
 |---------|------------|
 | **No connected devices** | **`adb devices`** must show **`device`**. Start an AVD or plug in the phone (USB debugging authorized). |
 | **OFFLINE / device offline / Finished 0 tests** | Emulator still booting or adb stale — **`./scripts/wait-for-adb-online.sh`** or **`./scripts/adb_restart.sh`**. |
+| **Debug ingest not hitting the host (physical device)** | Something must listen on **localhost:7747** on your PC; run **`./scripts/adb-reverse-debug-ingest.sh`** (**[details](#debug-ingest-port-7747)**). Emulators use **`10.0.2.2`** — reverse is **not** used. |
 | Map tiles missing / “Map API key missing” / Firebase config errors after clone | Run **`./scripts/setup-secrets.sh`** after placing **`secrets/outreach-secrets.json.age`** (and **`OUTREACH_SECRETS_PASSPHRASE`**), or follow [**manual Firebase / Maps**](#5-firebase-config-required-for-google-sign-in--firebase). |
 | **`Can't find service: package`** on install | Emulator **PackageManager** not ready — cold boot AVD, **`wait-for-adb-online.sh`**, **`sys.boot_completed`** = **`1`**. With **phone + emulator**, set **`ANDROID_SERIAL`**. |
 | **`device '<serial>' not found`** | Align **`ANDROID_HOME`** with **`sdk.dir`**, **`./scripts/adb_restart.sh`**, verify **`adb -s SERIAL get-state`** → **`device`**. |
@@ -470,14 +557,109 @@ Outreach development does **not** require that workspace; you can open **`androi
 
 ---
 
+## CI/CD (GitHub Actions)
+
+Phase **1** is rulesets + **`CODEOWNERS`** without blocking on CI until jobs exist — **[`docs/github-phase1-setup.md`](docs/github-phase1-setup.md)**. Phase **2** adds **`.github/workflows/`** as below; after green runs, enable **required status checks** using the **exact** strings from the PR **Checks** tab (often **`Workflow name / job id`**, e.g. **`Android CI / verify`**).
+
+**Secrets:** Most jobs need no custom repository secrets. **[`android-release-build.yml`](.github/workflows/android-release-build.yml)** requires **`OUTREACH_SECRETS_PASSPHRASE`** — see **[`docs/github-actions-secrets.md`](docs/github-actions-secrets.md)**.
+
+### What runs in CI
+
+| Workflow file | Job id | What it does |
+|---------------|--------|----------------|
+| **[`.github/workflows/android.yml`](.github/workflows/android.yml)** | **`verify`** | Gradle **wrapper validation**, copy **`google-services.json.example`** → **`google-services.json`**, **`./gradlew check`**. |
+| Same | **`instrumented`** | **`connectedDebugAndroidTest`** with **`-PoutreachAuthResolution=mock`** on an API 34 emulator; runs after **`verify`**. See **`docs/ui-testing.md`**. |
+| **[`.github/workflows/android-release-readiness.yml`](.github/workflows/android-release-readiness.yml)** | **`release-readiness`** | Only when the PR **base** is **`release/**`** or **`hotfix/**`**: **[`android/scripts/ci-release-version-check.sh`](android/scripts/ci-release-version-check.sh)** + **`lintRelease`** + **`testReleaseUnitTest`**. |
+| **[`.github/workflows/android-release-build.yml`](.github/workflows/android-release-build.yml)** | **`bundle-release`** | On **`workflow_dispatch`** or **`push`** to **`release/**` / **`hotfix/**`**: decrypt **`outreach-secrets.json.age`**, **`bundleRelease`**, upload **`.aab`**. |
+| **[`.github/workflows/android-version-bump.yml`](.github/workflows/android-version-bump.yml)** | **`bump`** | Manual: run on a **`release/**` or **`hotfix/**`** branch only; updates **`android/gradle.properties`** **`outreach.version*`** (never **`main`**). |
+| **[`.github/workflows/dependency-review.yml`](.github/workflows/dependency-review.yml)** | **`dependency-review`** | Dependency Review (enable **dependency graph** on the repo). |
+| **[`.github/workflows/secret-scan.yml`](.github/workflows/secret-scan.yml)** | **`gitleaks`** | Secret scanning. |
+
+**Hardening:** **`concurrency`** cancels superseded runs. **Fork PRs** share the non-secret CI path; do not add signing/Play jobs that need repo secrets on untrusted forks without a trust model.
+
+**Optional analysis:** CodeQL, Sonar, etc. — only if you will maintain them as required checks; remove from rulesets before deleting workflows.
+
+### Merge quality gates (required checks by target branch)
+
+Configure **GitHub Rulesets** from the **Checks** tab (names may differ from raw job ids).
+
+| PR into | Typical required checks |
+|---------|-------------------------|
+| **`develop`** | **`Android CI / verify`**, **`Android CI / instrumented`** (optional by policy), **`Dependency Review / dependency-review`**, **`Secret Scan / gitleaks`** |
+| **`release/**`** or **`hotfix/**`** | Above + **`Android release readiness / release-readiness`** |
+| **`main`** | Mirror your policy for merging into **`main`** (often same as **`release/**`**). |
+
+**Disabling a gate safely:** remove the check from **Rulesets → Required status checks** first, then disable or delete the workflow — otherwise merges can wait for a job that never runs.
+
+**Path filters:** Workflows trigger on **`android/**`** (and workflow paths). Doc-only PRs may skip jobs — avoid requiring checks that will not run, or touch **`android/`** when you need CI.
+
+### Continuous deployment (optional)
+
+When release signing and Play API credentials are stored as **GitHub Actions secrets**, a workflow can **`bundleRelease`**, attach the **`.aab`** as an artifact, and optionally upload to an **internal** Play track. **`needs:`** should depend on the **`verify`** and **`release-readiness`** jobs (by job id) before **`bundleRelease`**.
+
+---
+
+## Release process (GitFlow)
+
+This repo follows a **classic GitFlow** workflow: **`main`** holds production-ready history aligned with what ships on **Google Play**; **`develop`** is the integration branch for merged feature work. **CI/CD** (above) automates build/test gates on PRs; **shipping** to Play remains a **human** cut (branch, **`bundleRelease`**, Play Console) unless you add CD workflows and secrets.
+
+**Branches**
+
+| Branch / pattern | Role |
+|------------------|------|
+| **`main`** | Production-ready code. Tag each Play release as **`vX.Y.Z`** on the merge commit that matches what you uploaded. |
+| **`develop`** | Integration target for features; day-to-day PRs merge here first, not directly to **`main`** (except via release/hotfix flows). |
+| **`feature/<name>`** or **`SCRUM-123-short-name`** | Branch from **`develop`**; PR back to **`develop`**. Pick one naming style for the team and keep it consistent. |
+| **`release/X.Y.Z`** | Cut from **`develop`** when preparing a release. **Freeze new features** — only fixes and polish. Bump app version here (see below). |
+| **`hotfix/X.Y.Z`** | Branch from **`main`** for urgent production fixes; merge to **`main`**, tag, then merge **`main` → `develop`** so fixes are not lost. |
+
+**Version numbers** live in **`android/gradle.properties`** (**`outreach.versionCode`**, **`outreach.versionName`**); **`android/app/build.gradle.kts`** wires them into the Android plugin. **`versionCode`** must **always increase** between Play uploads (Play requirement); **`versionName`** is the user-visible semver (**`X.Y.Z`**). Bump them on **`release/`** or **`hotfix/`** branches before building the store artifact.
+
+### Feature work (routine)
+
+1. **`git checkout develop && git pull`**
+2. **`git checkout -b feature/<name>`** (or ticket-prefixed branch name)
+3. Implement, push, open PR **into `develop`**
+4. After review, merge; delete the feature branch
+
+### Play Store release (happy path)
+
+1. Confirm **`develop`** builds and tests (**`./gradlew assembleDebug`**, instrumentation tests per [CLI quick reference](#cli-quick-reference)) and fix blockers.
+2. **`git checkout develop && git pull`** then **`git checkout -b release/X.Y.Z`** (same **`X.Y.Z`** as **`versionName`** — no **`v`** in the branch name).
+3. Edit **`android/gradle.properties`**: set **`outreach.versionName`** to **`X.Y.Z`** and bump **`outreach.versionCode`** by at least **1** vs the last upload.
+4. Stabilize on **`release/X.Y.Z`** with bugfixes only — no new features unless you abandon this release branch and cut a new one later.
+5. QA using **`docs/release-checklist.md`** and sign-in/maps checks (**`docs/google-oauth-checklist.md`**). From **`android/`**, build a signed bundle: **`./gradlew bundleRelease`** (configure **release signing** on the machine or builder you use; the repo does not commit **`signingConfigs`**).
+6. Upload the **AAB** to Play **Internal** or **Closed testing** first. Ensure **OAuth / Maps / Firebase** allow your **release signing SHA-1** (debug vs upload vs Play App Signing differ — see **`docs/google-oauth-checklist.md`**).
+7. When ready, merge **`release/X.Y.Z` → `main`** via PR (or your team’s reviewed merge process).
+8. On **`main`**, tag the release commit: **`git tag -a vX.Y.Z -m "Outreach X.Y.Z"`**.
+9. **`git checkout develop && git merge main`** so **`develop`** includes any release fixes.
+10. Delete the **`release/X.Y.Z`** branch after merges complete.
+
+### Hotfix (production emergency)
+
+1. **`git checkout main && git pull`**
+2. **`git checkout -b hotfix/X.Y.Z`** — bump **`outreach.versionCode`** and patch **`outreach.versionName`** in **`android/gradle.properties`**, fix, **`./gradlew bundleRelease`**, upload to Play.
+3. Merge **`hotfix/X.Y.Z` → `main`**, tag **`vX.Y.Z`**, then **`git checkout develop && git merge main`** (or cherry-pick equivalent) so **`develop`** stays in sync.
+
+### Secrets and signing (not tied to Git branches)
+
+Store credentials are **orthogonal** to GitFlow: **`google-services.json`** and **`MAPS_API_KEY`** come from **`./scripts/setup-secrets.sh`** or manual setup ([**Firebase config**](#5-firebase-config-required-for-google-sign-in--firebase)). Document internally who holds the **upload keystore** and how **Play App Signing** is configured.
+
+---
+
 ## Documentation
 
+- **Jira** — [kirkmalcolmsexton.atlassian.net](https://kirkmalcolmsexton.atlassian.net)
+- **CI/CD and PR merge gates** — [CI/CD (GitHub Actions)](#cicd-github-actions) (this README); **secrets reference** — [`docs/github-actions-secrets.md`](docs/github-actions-secrets.md)
+- **GitHub Phase 1** (rulesets, Code Owners, no required CI yet) — [`docs/github-phase1-setup.md`](docs/github-phase1-setup.md)
+- **Release branching and Play uploads** — [Release process (GitFlow)](#release-process-gitflow) (this README)
 - **`docs/android-architecture.md`**
 - **`docs/sync-and-collab.md`**
 - **`docs/release-checklist.md`**
 - **`docs/outreach-secrets.schema.json`** (JSON schema for **`secrets/outreach-secrets.example.json`**)
 - **`docs/google-oauth-checklist.md`** (Google sign-in / Firebase OAuth troubleshooting)
 - **`docs/ui-testing.md`** (UI automation suite, test tags, instrumentation extras)
+- **`docs/test-scenarios-given-when-then.md`** (instrumentation scenarios in Given–When–Then form)
 
 **OAuth test users:** In the Google Cloud project for your Web client ID (`google_web_client_id`), add accounts under **Test users** while the app is not in production — [Google Auth platform → Audience](https://console.cloud.google.com/auth/audience) or [OAuth consent screen](https://console.cloud.google.com/apis/credentials/consent).
 

@@ -111,6 +111,8 @@ with an `ActivityScenarioRule` intent carrying the extras above.
 
 ## Current comprehensive suite entry points
 
+**Scenario catalog (Given–When–Then):** [`test-scenarios-given-when-then.md`](test-scenarios-given-when-then.md)
+
 - `android/app/src/androidTest/java/org/outreach/app/AppShellAutomationTest.kt`
 - `android/app/src/androidTest/java/org/outreach/feature/settings/SettingsScreenMockSpreadsheetSelectionTest.kt`
 - `android/app/src/androidTest/java/org/outreach/feature/visits/VisitLogScreenTest.kt`

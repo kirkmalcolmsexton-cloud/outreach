@@ -1,8 +1,10 @@
 package org.outreach.app
 
 import android.app.Application
+import android.content.Intent
 import androidx.work.Configuration
 import com.google.android.gms.auth.GoogleAuthUtil
+import com.google.android.gms.auth.UserRecoverableAuthException
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.maps.MapsInitializer
 import com.google.firebase.FirebaseApp
@@ -51,8 +53,24 @@ private class PlayServicesTokenProvider(
     private val app: Application
 ) : GoogleAccessTokenProvider {
     override suspend fun getAccessToken(vararg scopes: String): String? = withContext(Dispatchers.IO) {
-        val account = GoogleSignIn.getLastSignedInAccount(app)?.account ?: return@withContext null
+        val account = GoogleSignIn.getLastSignedInAccount(app)?.account
+            ?: return@withContext null
         val scopeExpr = "oauth2:${scopes.joinToString(" ")}"
-        runCatching { GoogleAuthUtil.getToken(app, account, scopeExpr) }.getOrNull()
+        runCatching { GoogleAuthUtil.getToken(app, account, scopeExpr) }.fold(
+            onSuccess = { it },
+            onFailure = { e ->
+                if (e is UserRecoverableAuthException) {
+                    val recoverIntent = e.intent
+                    if (recoverIntent != null) {
+                        runCatching {
+                            app.startActivity(
+                                recoverIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }
+                    }
+                }
+                null
+            },
+        )
     }
 }

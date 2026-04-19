@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Dump the device logcat buffer to android/log-captures/ (gitignored).
 # Requires one authorized device: adb devices -> "device"
+#
+# After capture, filter for Maps/Directions routing issues:
+#   grep -E 'OutreachDirections|Google Android Maps SDK|Google Maps Android API' log-captures/logcat-*.txt | tail -50
+# Live follow (directions + map auth only):
+#   adb logcat -s OutreachDirections:W 'Google Android Maps SDK:E' 'Google Maps Android API:E'
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

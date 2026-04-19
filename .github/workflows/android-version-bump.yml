@@ -1,0 +1,91 @@
+# Bump outreach.versionCode / outreach.versionName on release/** or hotfix/** only — never on main.
+# Run from Actions → select branch release/X.Y.Z or hotfix/X.Y.Z → workflow_dispatch.
+name: Android version bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "Semver versionName (X.Y.Z), must match branch release/X.Y.Z or hotfix/X.Y.Z"
+        required: true
+        type: string
+      version_code:
+        description: "Integer versionCode (must increase vs last Play upload)"
+        required: true
+        type: string
+
+concurrency:
+  group: android-version-bump-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Require release/* or hotfix/* branch
+        run: |
+          REF="${GITHUB_REF_NAME:-}"
+          case "$REF" in
+            release/*|hotfix/*) ;;
+            *)
+              echo "::error::Run this workflow only on a release/X.Y.Z or hotfix/X.Y.Z branch (current: $REF)."
+              exit 1
+              ;;
+          esac
+
+      - name: Require version_name matches branch X.Y.Z
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+        run: |
+          REF="${GITHUB_REF_NAME}"
+          case "$REF" in
+            release/*) BR_VER="${REF#release/}" ;;
+            hotfix/*) BR_VER="${REF#hotfix/}" ;;
+            *) exit 1 ;;
+          esac
+          if [[ "$VERSION_NAME" != "$BR_VER" ]]; then
+            echo "::error::version_name must match branch suffix (expected $BR_VER from $REF, got $VERSION_NAME)."
+            exit 1
+          fi
+
+      - name: Validate version_code is positive integer
+        env:
+          VC: ${{ inputs.version_code }}
+        run: |
+          if [[ ! "$VC" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::version_code must be a positive integer."
+            exit 1
+          fi
+
+      - name: Update android/gradle.properties
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          PROP="android/gradle.properties"
+          if [[ ! -f "$PROP" ]]; then
+            echo "::error::Missing $PROP"
+            exit 1
+          fi
+          sed -i.bak \
+            -e "s/^outreach\\.versionName=.*/outreach.versionName=${VERSION_NAME}/" \
+            -e "s/^outreach\\.versionCode=.*/outreach.versionCode=${VERSION_CODE}/" \
+            "$PROP"
+          rm -f "${PROP}.bak"
+          grep -E '^outreach\.version(Name|Code)=' "$PROP"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add android/gradle.properties
+          git diff --staged --quiet && echo "No changes" && exit 0
+          git commit -m "chore(android): bump version to ${{ inputs.version_name }} (${{ inputs.version_code }})"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

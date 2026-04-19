@@ -1,7 +1,12 @@
+# Core Android CI: JVM tests, lint, debug compile (verify) + emulator instrumentation.
+# Copy google-services from example so no Firebase secrets are required.
+# Copy gradle.properties from example (real file is gitignored; enables AndroidX flags in CI).
 name: Android CI
 
 on:
   push:
+    branches:
+      - "**"
     paths:
       - "android/**"
       - ".github/workflows/android.yml"
@@ -9,20 +14,86 @@ on:
     paths:
       - "android/**"
       - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: android-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
+    # Fork PRs: no repository secrets beyond GITHUB_TOKEN; same build path as internal PRs.
+    env:
+      MAPS_API_KEY: ci-placeholder-maps-not-used-at-runtime
     defaults:
       run:
         working-directory: android
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Place Firebase config for CI
+        run: cp app/google-services.json.example app/google-services.json
+
+      - name: Place Gradle properties for CI
+        run: cp gradle.properties.example gradle.properties
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-      - name: Build
+
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-      - name: Build
-        run: chmod +x ./gradlew && ./gradlew build
+
+      - name: Check (compile, unit tests, lint)
+        run: chmod +x ./gradlew && ./gradlew check --no-daemon
+
+  instrumented:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MAPS_API_KEY: ci-placeholder-maps-not-used-at-runtime
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Place Firebase config for CI
+        run: cp app/google-services.json.example app/google-services.json
+
+      - name: Place Gradle properties for CI
+        run: cp gradle.properties.example gradle.properties
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Build APKs before starting the emulator so the AVD is not idle during a long compile
+      # (idle emulators on CI often hit "Can't find service: package" when installing).
+      - name: Build debug and androidTest APKs
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug assembleDebugAndroidTest -PoutreachAuthResolution=mock --no-daemon
+
+      # emulator-runner runs each YAML line of `script` as its own `sh -c` (no shared cwd).
+      # Delegate to android/scripts/ci-emulator-connected-test.sh (single invocation).
+      - name: Run instrumentation tests (mock auth)
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: Nexus 6
+          script: bash "${GITHUB_WORKSPACE}/android/scripts/ci-emulator-connected-test.sh"

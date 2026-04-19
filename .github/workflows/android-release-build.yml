@@ -1,0 +1,64 @@
+# Decrypt outreach-secrets.json.age, merge release Maps key, bundle release AAB.
+# Requires repository secret OUTREACH_SECRETS_PASSPHRASE; fails fast if missing or wrong.
+name: Android release bundle
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "release/**"
+      - "hotfix/**"
+
+concurrency:
+  group: android-release-bundle-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bundle-release:
+    runs-on: ubuntu-latest
+    env:
+      OUTREACH_SECRETS_PASSPHRASE: ${{ secrets.OUTREACH_SECRETS_PASSPHRASE }}
+      OUTREACH_MAPS_KEY_FIELD: release_api_key
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require OUTREACH_SECRETS_PASSPHRASE
+        run: |
+          if [ -z "${OUTREACH_SECRETS_PASSPHRASE:-}" ]; then
+            echo "::error::Repository secret OUTREACH_SECRETS_PASSPHRASE is not set or not available to this workflow (empty value)."
+            exit 1
+          fi
+
+      - name: Install age, jq, expect
+        run: sudo apt-get update && sudo apt-get install -y age jq expect
+
+      - name: Place Gradle properties for CI
+        run: cp gradle.properties.example gradle.properties
+
+      - name: Decrypt secrets and materialize google-services + MAPS_API_KEY
+        working-directory: ${{ github.workspace }}
+        run: bash android/scripts/setup-secrets.sh
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Bundle release
+        run: chmod +x ./gradlew && ./gradlew bundleRelease --no-daemon
+
+      - name: Upload release bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          path: android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error

@@ -210,6 +210,12 @@ fun MapScreen(
     val mapsApiKey = remember(context) {
         runCatching { context.getString(R.string.google_maps_key) }.getOrDefault("")
     }
+    val mapsKeyLooksLikeOAuthWebClient = remember(mapsApiKey) {
+        mapsApiKey.contains(".apps.googleusercontent.com", ignoreCase = true)
+    }
+    val mapsKeyLooksLikeGradleTemplate = remember(mapsApiKey) {
+        mapsApiKey == "your_maps_key_here" || mapsApiKey == "ci-placeholder-maps-not-used-at-runtime"
+    }
     val spokenNavigationHost = rememberSpokenNavigationHost()
     var routePoints by remember { mutableStateOf<List<LatLng>?>(null) }
     var routeSpokenInstructions by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -235,7 +241,13 @@ fun MapScreen(
     var activateNavigationAfterPermission by remember { mutableStateOf(false) }
     var localSelectedHouseholdId by remember { mutableStateOf<String?>(null) }
     var hasInitializedViewport by remember { mutableStateOf(false) }
+    /** True after [GoogleMap]'s native map finishes loading — [CameraUpdateFactory] is unsafe before that. */
+    var googleMapComposeReady by remember { mutableStateOf(false) }
     var hasPromptedInitialLocationPermission by remember { mutableStateOf(false) }
+
+    LaunchedEffect(viewMode) {
+        if (viewMode == "map") googleMapComposeReady = false
+    }
     var hasLocationPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -310,13 +322,15 @@ fun MapScreen(
                     fused.lastLocation.await()
                 }.getOrNull()
                 if (currentLocation != null) {
-                    cameraPositionState.move(
-                        CameraUpdateFactory.newLatLngZoom(
-                            LatLng(currentLocation.latitude, currentLocation.longitude),
-                            13f
+                    val moved = runCatching {
+                        cameraPositionState.move(
+                            CameraUpdateFactory.newLatLngZoom(
+                                LatLng(currentLocation.latitude, currentLocation.longitude),
+                                13f
+                            )
                         )
-                    )
-                    hasInitializedViewport = true
+                    }.isSuccess
+                    if (moved) hasInitializedViewport = true
                 }
             }
         } else if (!granted) {
@@ -469,17 +483,6 @@ fun MapScreen(
         if (!isNavigationActive || targetHousehold == null) return@LaunchedEffect
         if (targetHousehold.id != activeNavigationHouseholdId) return@LaunchedEffect
         if (spokenNavigationHouseholdId == targetHousehold.id) return@LaunchedEffect
-        // #region agent log
-        agentDebugLog(
-            "B",
-            "MapScreen.kt:LaunchedEffect_spokenNav",
-            "speak_route_start",
-            mapOf(
-                "instructionCount" to routeSpokenInstructions.size,
-                "destinationId" to targetHousehold.id
-            )
-        )
-        // #endregion
         spokenNavigationHost.speakRouteStart(
             destinationLabel = targetHousehold.name,
             instructions = routeSpokenInstructions
@@ -515,28 +518,10 @@ fun MapScreen(
         if (TestRuntime.isInstrumentation) {
             val simulated = NavigationTestSupport.simulatedNavigationLocations
             if (simulated != null) {
-                simulated.forEachIndexed { index, coords ->
+                simulated.forEachIndexed { _, coords ->
                     delay(50L)
                     NavigationTestSupport.recordSimulatedNavigationUpdate()
                     applyNavigationFix(coords.first, coords.second)
-                    val updateCount = index + 1
-                    if (updateCount <= 8) {
-                        // #region agent log
-                        agentDebugLog(
-                            "C",
-                            "MapScreen.kt:simulatedNavLocation",
-                            "position_update_while_nav",
-                            mapOf(
-                                "lat" to coords.first,
-                                "lng" to coords.second,
-                                "updateIndex" to updateCount,
-                                "uiDistanceText" to routeDistanceText,
-                                "uiDurationText" to routeDurationText,
-                                "activeNavId" to activeNavigationHouseholdId
-                            )
-                        )
-                        // #endregion
-                    }
                 }
                 return@LaunchedEffect
             }
@@ -545,29 +530,10 @@ fun MapScreen(
         val request = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, 4000L)
             .setMinUpdateIntervalMillis(4000L)
             .build()
-        var updateCount = 0
         val callback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 val loc = result.lastLocation ?: return
-                updateCount++
                 applyNavigationFix(loc.latitude, loc.longitude)
-                if (updateCount <= 8) {
-                    // #region agent log
-                    agentDebugLog(
-                        "C",
-                        "MapScreen.kt:onLocationResult",
-                        "position_update_while_nav",
-                        mapOf(
-                            "lat" to loc.latitude,
-                            "lng" to loc.longitude,
-                            "updateIndex" to updateCount,
-                            "uiDistanceText" to routeDistanceText,
-                            "uiDurationText" to routeDurationText,
-                            "activeNavId" to activeNavigationHouseholdId
-                        )
-                    )
-                    // #endregion
-                }
             }
         }
         client.requestLocationUpdates(request, callback, android.os.Looper.getMainLooper())
@@ -578,7 +544,9 @@ fun MapScreen(
         }
     }
 
-    LaunchedEffect(mapMarkers, selectedHouseholdId, hasLocationPermission) {
+    LaunchedEffect(mapMarkers, selectedHouseholdId, hasLocationPermission, googleMapComposeReady, viewMode) {
+        if (viewMode != "map") return@LaunchedEffect
+        if (!googleMapComposeReady) return@LaunchedEffect
         if (initialViewportState != null) return@LaunchedEffect
         if (hasInitializedViewport) return@LaunchedEffect
         if (selectedHouseholdId != null) return@LaunchedEffect
@@ -595,37 +563,48 @@ fun MapScreen(
                 fused.lastLocation.await()
             }.getOrNull()
             if (currentLocation != null) {
-                cameraPositionState.move(
-                    CameraUpdateFactory.newLatLngZoom(
-                        LatLng(currentLocation.latitude, currentLocation.longitude),
-                        13f
+                val ok = runCatching {
+                    cameraPositionState.move(
+                        CameraUpdateFactory.newLatLngZoom(
+                            LatLng(currentLocation.latitude, currentLocation.longitude),
+                            13f
+                        )
                     )
-                )
-                hasInitializedViewport = true
-                return@LaunchedEffect
+                }.isSuccess
+                if (ok) {
+                    hasInitializedViewport = true
+                    return@LaunchedEffect
+                }
             }
         }
-        if (mapMarkers.isNotEmpty()) {
-            cameraPositionState.move(
-                CameraUpdateFactory.newLatLngZoom(mapMarkers.first().second, 13f)
-            )
-            hasInitializedViewport = true
+        val moved = if (mapMarkers.isNotEmpty()) {
+            runCatching {
+                cameraPositionState.move(
+                    CameraUpdateFactory.newLatLngZoom(mapMarkers.first().second, 13f)
+                )
+            }.isSuccess
         } else {
-            cameraPositionState.move(
-                CameraUpdateFactory.newLatLngZoom(defaultCenter, 10f)
-            )
+            runCatching {
+                cameraPositionState.move(
+                    CameraUpdateFactory.newLatLngZoom(defaultCenter, 10f)
+                )
+            }.isSuccess
         }
+        if (moved) hasInitializedViewport = true
     }
 
-    LaunchedEffect(selectedHouseholdId, viewMode, mapMarkers) {
+    LaunchedEffect(selectedHouseholdId, viewMode, mapMarkers, googleMapComposeReady) {
         if (viewMode != "map") return@LaunchedEffect
+        if (!googleMapComposeReady) return@LaunchedEffect
         val id = selectedHouseholdId ?: return@LaunchedEffect
         localSelectedHouseholdId = id
         val target = mapMarkers.firstOrNull { (h, _) -> h.id == id } ?: return@LaunchedEffect
-        cameraPositionState.animate(
-            CameraUpdateFactory.newLatLngZoom(target.second, selectionZoom),
-            400
-        )
+        runCatching {
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(target.second, selectionZoom),
+                400
+            )
+        }
     }
     val shouldPersistViewport = initialViewportState != null || hasInitializedViewport
     LaunchedEffect(cameraPositionState, shouldPersistViewport) {
@@ -679,6 +658,21 @@ fun MapScreen(
                     modifier = Modifier.padding(top = 12.dp)
                 )
             }
+            if (hasMapsApiMetadata && mapsKeyLooksLikeGradleTemplate) {
+                Text(
+                    "Map API key is still a template or CI placeholder. Set a real Google Maps Platform key (AIza…) in MAPS_API_KEY / development_api_key.",
+                    modifier = Modifier.padding(top = 12.dp),
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            if (hasMapsApiMetadata && mapsKeyLooksLikeOAuthWebClient) {
+                Text(
+                    "MAPS_API_KEY looks like a Google OAuth Web client ID (*.apps.googleusercontent.com). " +
+                        "Maps tiles need a separate Maps Platform API key from Google Cloud → APIs & Services → Credentials—not the Firebase/Google Sign-In Web client ID.",
+                    modifier = Modifier.padding(top = 12.dp),
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
             if (mapMarkers.isEmpty()) {
                 Text(
                     "No coordinates available for current filter. Showing map center only.",
@@ -701,7 +695,10 @@ fun MapScreen(
                     .background(Color(0xFFECEFF1)),
                 properties = MapProperties(isMyLocationEnabled = hasLocationPermission),
                 uiSettings = MapUiSettings(mapToolbarEnabled = false),
-                cameraPositionState = cameraPositionState
+                cameraPositionState = cameraPositionState,
+                onMapLoaded = {
+                    googleMapComposeReady = true
+                }
             ) {
                 val selectedId = selectedHouseholdId?.takeIf { it.isNotBlank() }
                     ?: localSelectedHouseholdId?.takeIf { localId ->
@@ -734,37 +731,40 @@ fun MapScreen(
                         zIndex = 1f
                     )
                 }
-                mapMarkers.forEach { (household, position) ->
-                    key(household.id) {
-                        val isSelected = household.id == selectedId
-                        val markerState = remember { MarkerState(position = position) }
-                            .apply { this.position = position }
-                        Marker(
-                            state = markerState,
-                            title = household.name,
-                            snippet = buildString {
-                                append(formatBriefComment(household.briefComment))
-                                append("\n")
-                                append(
-                                    parseIsoDateOrNull(household.lastVisited)?.format(prettyDateFormatter)
-                                        ?: "Not visited"
-                                )
-                            },
-                            icon = markerDescriptorForBriefComment(household.briefComment),
-                            zIndex = if (isSelected) 2f else 0f,
-                            onClick = {
-                                val nextSelectedId = if (isSelected) null else household.id
-                                localSelectedHouseholdId = nextSelectedId
-                                onHouseholdSelected(household)
-                                if (nextSelectedId != null) {
+                // BitmapDescriptorFactory (used by Marker icons) is not reliable until the native map has loaded.
+                if (googleMapComposeReady) {
+                    mapMarkers.forEach { (household, position) ->
+                        key(household.id) {
+                            val isSelected = household.id == selectedId
+                            val markerState = remember { MarkerState(position = position) }
+                                .apply { this.position = position }
+                            Marker(
+                                state = markerState,
+                                title = household.name,
+                                snippet = buildString {
+                                    append(formatBriefComment(household.briefComment))
+                                    append("\n")
+                                    append(
+                                        parseIsoDateOrNull(household.lastVisited)?.format(prettyDateFormatter)
+                                            ?: "Not visited"
+                                    )
+                                },
+                                icon = markerDescriptorForBriefComment(household.briefComment),
+                                zIndex = if (isSelected) 2f else 0f,
+                                onClick = {
+                                    val nextSelectedId = if (isSelected) null else household.id
+                                    localSelectedHouseholdId = nextSelectedId
+                                    onHouseholdSelected(household)
+                                    if (nextSelectedId != null) {
+                                        requestRouteForHousehold(household, false)
+                                    }
+                                    false
+                                },
+                                onInfoWindowClick = {
                                     requestRouteForHousehold(household, false)
                                 }
-                                false
-                            },
-                            onInfoWindowClick = {
-                                requestRouteForHousehold(household, false)
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -999,14 +999,6 @@ private suspend fun loadDrivingRoutePreview(
             return Result.success(injected)
         }
     }
-    // #region agent log
-    agentDebugLog(
-        "A",
-        "MapScreen.kt:loadDrivingRoutePreview",
-        "route_fetch_started",
-        mapOf("householdId" to household.id)
-    )
-    // #endregion
     val dest = destinationLatLng(context, household)
     if (dest == null) {
         return Result.failure(IllegalArgumentException("Could not resolve destination address."))
@@ -1020,19 +1012,6 @@ private suspend fun loadDrivingRoutePreview(
     val origin = LatLng(loc.latitude, loc.longitude)
     val routeResult = DirectionsRouteFetcher.fetchDrivingRouteDetails(origin, dest, apiKey)
     routeResult.onSuccess { details ->
-        // #region agent log
-        agentDebugLog(
-            "A",
-            "MapScreen.kt:loadDrivingRoutePreview",
-            "route_fetched",
-            mapOf(
-                "pointCount" to details.points.size,
-                "distanceText" to details.distanceText,
-                "durationText" to details.durationText,
-                "instructionCount" to details.spokenInstructions.size
-            )
-        )
-        // #endregion
         fitCameraToRoute(cameraPositionState, details.points)
     }
     return routeResult
@@ -1059,7 +1038,9 @@ private fun fitCameraToRoute(cameraPositionState: CameraPositionState, points: L
     val builder = LatLngBounds.Builder()
     for (p in points) builder.include(p)
     val bounds = builder.build()
-    cameraPositionState.move(CameraUpdateFactory.newLatLngBounds(bounds, 120))
+    runCatching {
+        cameraPositionState.move(CameraUpdateFactory.newLatLngBounds(bounds, 120))
+    }
 }
 
 private fun openGoogleMapsNavigation(
