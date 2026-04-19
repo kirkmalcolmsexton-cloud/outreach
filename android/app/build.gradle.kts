@@ -20,25 +20,22 @@ android {
             file.inputStream().use { load(it) }
         }
     }
-    val parentGradleProperties = Properties().apply {
-        val file = project.file("../gradle.properties")
-        if (file.exists()) {
-            file.inputStream().use { load(it) }
-        }
-    }
     val userGradleProperties = Properties().apply {
         val file = File(System.getProperty("user.home"), ".gradle/gradle.properties")
         if (file.exists()) {
             file.inputStream().use { load(it) }
         }
     }
+    // Do NOT use providers.gradleProperty("MAPS_API_KEY"): it merges android/gradle.properties and wins
+    // before we read local.properties — so a template MAPS_API_KEY there overrides setup-secrets.
+    // CLI: only explicit -P MAPS_API_KEY=… (see gradle.startParameter.projectProperties).
+    val mapsApiKeyFromCli = gradle.startParameter.projectProperties["MAPS_API_KEY"]
     val mapsApiKey = sequenceOf(
-        providers.gradleProperty("MAPS_API_KEY").orNull,
-        rootGradleProperties.getProperty("MAPS_API_KEY"),
-        parentGradleProperties.getProperty("MAPS_API_KEY"),
-        userGradleProperties.getProperty("MAPS_API_KEY"),
+        mapsApiKeyFromCli,
         localProperties.getProperty("MAPS_API_KEY"),
-        System.getenv("MAPS_API_KEY")
+        System.getenv("MAPS_API_KEY"),
+        rootGradleProperties.getProperty("MAPS_API_KEY"),
+        userGradleProperties.getProperty("MAPS_API_KEY"),
     ).firstOrNull { !it.isNullOrBlank() } ?: ""
 
     namespace = "org.outreach.app"

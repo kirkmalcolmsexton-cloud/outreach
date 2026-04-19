@@ -198,9 +198,28 @@ class AuthViewModel(
         val fe = e as? FirebaseAuthException
         return if (fe != null) {
             val msg = fe.message?.takeIf { it.isNotBlank() } ?: fe.localizedMessage.orEmpty()
-            "Authentication failed (${fe.errorCode}): $msg"
+            firebaseAuthMaybeApiKeyHint(msg)
+                ?: "Authentication failed (${fe.errorCode}): $msg"
         } else {
-            "Authentication failed: ${e.message ?: e.javaClass.simpleName}"
+            val msg = e.message?.takeIf { it.isNotBlank() } ?: e.localizedMessage.orEmpty()
+            firebaseAuthMaybeApiKeyHint(msg)
+                ?: "Authentication failed: ${msg.ifBlank { e.javaClass.simpleName }}"
+        }
+    }
+
+    /** When Firebase rejects the packaged Android API key (google-services.json), nudge toward the right credential. */
+    private fun firebaseAuthMaybeApiKeyHint(fullMessage: String): String? {
+        val lower = fullMessage.lowercase()
+        val apiKeyRejected =
+            lower.contains("api key") &&
+                (lower.contains("not valid") || lower.contains("invalid"))
+        return if (!apiKeyRejected) {
+            null
+        } else {
+            "Authentication failed (Firebase Android API key): $fullMessage — This key comes from app/google-services.json " +
+                "(current_key), not MAPS_API_KEY. Use a google-services.json downloaded from your Firebase project's Android " +
+                "app settings, run android/scripts/setup-secrets.sh if you use consolidated secrets, and in Google Cloud " +
+                "Console check API key restrictions allow Firebase / Identity Toolkit for this app."
         }
     }
 

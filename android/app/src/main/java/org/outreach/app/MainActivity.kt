@@ -77,6 +77,7 @@ import org.outreach.app.testing.UiAutomationConfig
 import org.outreach.ui.testtags.TestTags
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.Scope
 import com.google.firebase.auth.FirebaseAuth
 import java.util.concurrent.TimeUnit
 
@@ -87,6 +88,32 @@ private data class MockDriveSpreadsheet(
 
 private fun shouldUseMockDrivePickerOnThisDevice(): Boolean {
     return BuildConfig.DEBUG && TestRuntime.isAutomation
+}
+
+/** Same OAuth scopes as [org.outreach.feature.auth.LoginGateScreen] (Sheets + Drive). */
+private val outreachGoogleSheetsScopes = arrayOf(
+    Scope("https://www.googleapis.com/auth/spreadsheets"),
+    Scope("https://www.googleapis.com/auth/drive.file"),
+    Scope("https://www.googleapis.com/auth/drive.metadata.readonly"),
+)
+
+private fun isFullySignedInForSheets(context: android.content.Context): Boolean {
+    if (FirebaseAuth.getInstance().currentUser == null) return false
+    val account = GoogleSignIn.getLastSignedInAccount(context) ?: return false
+    return GoogleSignIn.hasPermissions(account, *outreachGoogleSheetsScopes)
+}
+
+private fun shouldShowLoginGateInitially(
+    context: android.content.Context,
+    uiAutomationConfig: UiAutomationConfig,
+): Boolean {
+    if (uiAutomationConfig.forceLoginGate) return true
+    if (TestRuntime.isInstrumentation &&
+        uiAutomationConfig.authResolution == UiAutomationConfig.AuthResolution.MOCK
+    ) {
+        return false
+    }
+    return !isFullySignedInForSheets(context)
 }
 
 class MainActivity : ComponentActivity() {
@@ -130,7 +157,9 @@ private fun OutreachRoot(uiAutomationConfig: UiAutomationConfig = UiAutomationCo
     val fastStartup = TestRuntime.isInstrumentation || uiAutomationConfig.skipStartupDelay
     val forcedInitialViewMode = uiAutomationConfig.homeViewMode
     var showStartupScreen by remember { mutableStateOf(!fastStartup) }
-    var showLoginGate by remember { mutableStateOf(uiAutomationConfig.forceLoginGate) }
+    var showLoginGate by remember {
+        mutableStateOf(shouldShowLoginGateInitially(context, uiAutomationConfig))
+    }
     var screen by remember { mutableStateOf("home") }
     var mapViewMode by remember { mutableStateOf(forcedInitialViewMode ?: "map") }
     var pickedSpreadsheetId by remember { mutableStateOf<String?>(null) }
@@ -174,7 +203,9 @@ private fun OutreachRoot(uiAutomationConfig: UiAutomationConfig = UiAutomationCo
             showStartupScreen = false
         }
     }
-    LaunchedEffect(savedConfig.spreadsheetId) {
+    LaunchedEffect(savedConfig.spreadsheetId, showLoginGate) {
+        if (showLoginGate) return@LaunchedEffect
+        if (!isFullySignedInForSheets(context)) return@LaunchedEffect
         val repository = OutreachServiceLocator.repository ?: return@LaunchedEffect
         presetsLoading = true
         briefCommentPresets = runCatching { repository.loadBriefCommentPresets() }.getOrDefault(emptyList())

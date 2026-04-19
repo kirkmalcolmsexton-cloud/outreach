@@ -17,7 +17,7 @@ The Android app lives in **`android/`** as a **single-module** project (root Gra
 | Who you are | Where to start |
 |---------------|----------------|
 | **New to Android** — viewing this on GitHub and need the shortest path to **build** and run **tests on the emulator** | Prep: [**Before you clone**](#before-you-clone), then [**First-time setup (emulator)**](#first-time-setup-emulator) |
-| **Past first setup** — exploring Outreach using a **real phone** over USB | [**Physical device testing**](#physical-device-testing) |
+| **Past first setup** — exploring Outreach using a **real phone** over USB | [**Physical device testing**](#physical-device-testing) (includes [**debug ingest**](#debug-ingest-port-7747)) |
 | **Comfortable with Android** — you want **commands, flags, and scripts** without extra narrative | [**CLI quick reference**](#cli-quick-reference) |
 | **Cursor / multi-root workspace** — you use the workspace repo next to Outreach | [**Cursor workspace**](#cursor-workspace) |
 | **Cutting a Play release / branching** — maintainers integrating and shipping | [**Release process (GitFlow)**](#release-process-gitflow) |
@@ -258,6 +258,7 @@ If you do not use the consolidated file:
 2. Replace with your real **`google-services.json`** from the Firebase console.
 3. Add **`MAPS_API_KEY=…`** to **`android/local.properties`** or **`~/.gradle/gradle.properties`** (see **`android/gradle.properties`**).  
    - Keep these files **local-only**; do not commit them.
+   - **Routing / arrival times** on the map use the **Directions API** with the same key: in Google Cloud, enable **Directions API** for the project, keep **billing** on for Maps Platform, and under the key’s **API restrictions** allow **Directions API** (not only Maps SDK for Android).
 
 ### 6. Sanity check: build
 
@@ -349,6 +350,23 @@ export ANDROID_SERIAL="$(./scripts/get-device-serial.sh --pick)"
 
 Align **`ANDROID_HOME`** with **`sdk.dir`** in **`local.properties`** so **`adb`** and Gradle use the same SDK ([**SDK alignment**](#sdk-alignment) in the quick reference).
 
+### Debug ingest (port 7747)
+
+If you run a **local NDJSON ingest** (or similar) on **`127.0.0.1:7747`**, remember that on a **physical device** that address refers to the phone itself, not your computer.
+
+| Situation | What to do |
+|-----------|------------|
+| **Android Emulator** | The app uses **`10.0.2.2:7747`** to reach the host. **Do not** run **`adb reverse`** for this — the emulator already maps the special alias. |
+| **Physical device (USB)** | Start (or rely on) a **host** tool that listens on **`127.0.0.1:7747`**, then from the **repo root** run **`./scripts/adb-reverse-debug-ingest.sh`**. That sets up **reverse** port forwarding so **`127.0.0.1:7747` on the device** reaches **`127.0.0.1:7747` on your machine**. |
+| **Reconnect / stale adb** | Reverse rules are tied to the **adb** session. Run the script again after **`adb kill-server`**, unplugging the cable, or if logs stop arriving. |
+
+**Multiple devices:** set **`ANDROID_SERIAL`** (same as for Gradle) so **`adb`** targets the correct phone:
+
+```bash
+export ANDROID_SERIAL="$(./scripts/get-device-serial.sh --pick)"
+./scripts/adb-reverse-debug-ingest.sh
+```
+
 ### Auth in tests
 
 - **`mock`** — forced UI for automation; no Google login required ([**CLI flags**](#instrumentation-cli-flags)).
@@ -395,6 +413,7 @@ Single test class:
 | **`./scripts/wait-for-adb-online.sh`** | Block until **`adb`** → **`device`** and boot complete; **`ADB_WAIT_TIMEOUT`** / **`ADB_WAIT_INTERVAL`** |
 | **`./scripts/resolve-outreach-emulator-serial.sh`** | Print **`adb`** serial for the Outreach default AVD (use with **`ANDROID_SERIAL`**) |
 | **`./scripts/get-device-serial.sh`** | Table **`adb devices`**; **`--pick`** one serial; **`--physical`** USB only — **`--help`** |
+| **`./scripts/adb-reverse-debug-ingest.sh`** | **`adb reverse tcp:7747 tcp:7747`** — device **`localhost:7747`** → host **`localhost:7747`** for debug NDJSON ingest (**USB phone**); set **`ANDROID_SERIAL`** if several devices ([**when to use**](#debug-ingest-port-7747)) |
 | **`./scripts/adb_restart.sh`** | **`adb kill-server`** / **`start-server`** (stale adb) |
 
 ### Instrumentation CLI flags
@@ -443,6 +462,7 @@ export PATH="$ANDROID_HOME/platform-tools:$PATH"
 |---------|------------|
 | **No connected devices** | **`adb devices`** must show **`device`**. Start an AVD or plug in the phone (USB debugging authorized). |
 | **OFFLINE / device offline / Finished 0 tests** | Emulator still booting or adb stale — **`./scripts/wait-for-adb-online.sh`** or **`./scripts/adb_restart.sh`**. |
+| **Debug ingest not hitting the host (physical device)** | Something must listen on **localhost:7747** on your PC; run **`./scripts/adb-reverse-debug-ingest.sh`** (**[details](#debug-ingest-port-7747)**). Emulators use **`10.0.2.2`** — reverse is **not** used. |
 | Map tiles missing / “Map API key missing” / Firebase config errors after clone | Run **`./scripts/setup-secrets.sh`** after placing **`secrets/outreach-secrets.json.age`** (and **`OUTREACH_SECRETS_PASSPHRASE`**), or follow [**manual Firebase / Maps**](#5-firebase-config-required-for-google-sign-in--firebase). |
 | **`Can't find service: package`** on install | Emulator **PackageManager** not ready — cold boot AVD, **`wait-for-adb-online.sh`**, **`sys.boot_completed`** = **`1`**. With **phone + emulator**, set **`ANDROID_SERIAL`**. |
 | **`device '<serial>' not found`** | Align **`ANDROID_HOME`** with **`sdk.dir`**, **`./scripts/adb_restart.sh`**, verify **`adb -s SERIAL get-state`** → **`device`**. |
