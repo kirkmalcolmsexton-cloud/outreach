@@ -31,7 +31,7 @@ The Android app lives in **`android/`** as a **single-module** project (root Gra
 
 Phase **1** (rulesets + **`CODEOWNERS`** without blocking CI yet): **[`docs/github-phase1-setup.md`](docs/github-phase1-setup.md)**.
 
-**Secrets:** Release bundle needs **`OUTREACH_SECRETS_PASSPHRASE`** always; upload signing uses either committed **`secrets/upload-keystore.jks.age`** plus **`android_upload_signing`** in decrypted JSON (**repo mode**), or legacy **`ANDROID_UPLOAD_*`** GitHub secrets — **[`docs/release-process.md`](docs/release-process.md#github-repository-secrets)** and **[`docs/github-actions-secrets.md`](docs/github-actions-secrets.md)**.
+**Secrets:** Release bundle needs **`OUTREACH_SECRETS_PASSPHRASE`** always; upload signing uses either committed **`secrets/upload-keystore.jks.age`** plus **`android_upload_signing`** in decrypted JSON (**repo mode**), or legacy **`ANDROID_UPLOAD_*`** GitHub secrets — **[`secrets/README.md`](secrets/README.md)** (sources, destinations, workflows), **[`docs/release-process.md`](docs/release-process.md#github-repository-secrets)**, **[`docs/github-actions-secrets.md`](docs/github-actions-secrets.md)**.
 
 ---
 
