@@ -4,39 +4,178 @@ Operator-facing guide for GitFlow, GitHub Actions release bundles, Play uploads,
 
 ## First-time release
 
-Complete these before expecting a green **Android release bundle** workflow. The full secret-name checklist is in **[§ GitHub repository secrets](#github-repository-secrets)**.
+Use this checklist the first time you expect CI to produce a **signed** **`.aab`** and you are wiring **GitHub Actions** secrets. Secret names and meanings are in **[§ GitHub repository secrets](#github-repository-secrets)**.
 
-### Recommended order (first green CI bundle)
+### Prerequisites (before any step)
 
-1. **Merge signing support** — [`android/app/build.gradle.kts`](../android/app/build.gradle.kts) reads **`ANDROID_UPLOAD_*`** env vars (CI) or **`android/keystore.properties`** (local). **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** must exist on the branch Actions runs.
+- **Repository:** Permission to add **Actions** repository secrets on this GitHub repo (maintainer/admin as required by org policy).
+- **Branch:** Signing and **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** must be **merged** into the branch you will run Actions on (typically **`develop`** → **`release/X.Y.Z`**).
+- **Files in repo:** Committed **`secrets/outreach-secrets.json.age`** and teammate-shared passphrase for decryption (same as local **`encrypt-secrets.sh`** / **`setup-secrets.sh`**).
+- **Tools (for scripted keystore upload):** **JDK** (`keytool`), **GitHub CLI** **`gh`** (`gh auth login`), **Git** clone of the repo.
 
-2. **Set `OUTREACH_SECRETS_PASSPHRASE`** — In the GitHub repo: **Settings → Secrets and variables → Actions**. Required so **[`android/scripts/setup-secrets.sh`](../android/scripts/setup-secrets.sh)** can decrypt **`secrets/outreach-secrets.json.age`** and materialize release Maps / Firebase files before **`bundleRelease`**. Without it, the job fails at the passphrase guard step.
+---
 
-3. **Create upload keystore + `ANDROID_UPLOAD_*` secrets** — Preferred: from a clone of this repo, run **`android/scripts/create-upload-keystore-and-gh-secrets.sh`** (requires **`gh`** logged in with permission to set secrets). It generates a keystore (default path under **`~/.config/outreach/`**) and sets **`ANDROID_UPLOAD_KEYSTORE_BASE64`**, **`ANDROID_UPLOAD_KEYSTORE_PASSWORD`**, **`ANDROID_UPLOAD_KEY_ALIAS`**, **`ANDROID_UPLOAD_KEY_PASSWORD`**. **Back up** the keystore file and passwords outside GitHub.
+### Step 1 — Confirm signing is in the codebase
 
-4. **Manual fallback** — Use Android Studio (**Build → Generate Signed Bundle**) or **`keytool`**, then base64 the keystore file and paste each value into repository secrets under the names in **[§ GitHub repository secrets](#github-repository-secrets)**.
+**Goal:** The runner can sign **`bundleRelease`**; otherwise secrets alone are not enough.
 
-5. **Cut / update a release branch** — e.g. **`release/X.Y.Z`** or **`hotfix/X.Y.Z`**, and bump **`android/gradle.properties`** **`outreach.versionCode`** / **`outreach.versionName`** (see below).
+**Do:**
 
-6. **Run the Android release bundle workflow** — **Actions → Android release bundle → Run workflow**, or **push** to **`release/**`** or **`hotfix/**`** (see triggers in **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)**).
+1. Open [`android/app/build.gradle.kts`](../android/app/build.gradle.kts) and confirm **`signingConfigs`** / **`ANDROID_UPLOAD_*`** wiring exists for **`release`**.
+2. Open **[`.github/workflows/android-release-build.yml`](../.github/workflows/android-release-build.yml)** and confirm jobs decode the keystore and pass env vars into Gradle.
 
-7. **Confirm a green run** — Download the **`release-bundle`** artifact (**`.aab`**).
+**Verify:** Merged on **`main`** / **`develop`** / your release branch per your team’s process.
 
-8. **Google Play Console** — Create the app listing if needed; use **Play App Signing**; upload the **`.aab`** to **Internal testing** or **Closed testing** first.
+---
 
-9. **OAuth / Firebase / Maps** — Register **SHA-1** / **SHA-256** for the **upload** certificate and for the **Play app signing** certificate as needed. Follow **[`google-oauth-checklist.md`](google-oauth-checklist.md)** (Play shows fingerprints after upload).
+### Step 2 — Add `OUTREACH_SECRETS_PASSPHRASE` (one secret)
 
-10. **QA** — Test on internal/closed tracks; then merge **release → main** and promote in Play when ready.
+**Goal:** CI can decrypt **`secrets/outreach-secrets.json.age`** and write **`google-services.json`** + **`MAPS_API_KEY`** before **`bundleRelease`**.
 
-**Ordering note:** The workflow checks **`OUTREACH_SECRETS_PASSPHRASE`** before Gradle. **`ANDROID_UPLOAD_*`** must all be present before **`bundleRelease`** can succeed. You may set the passphrase secret before or after running the keystore script; both must exist before a successful bundle.
+**Do:**
 
-### If you triggered CI before secrets were ready
+1. GitHub → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
+2. **Name:** **`OUTREACH_SECRETS_PASSPHRASE`** (exact spelling).
+3. **Value:** The passphrase your team uses to encrypt/decrypt **`outreach-secrets.json.age`**.
 
-The workflow **fails at the first missing prerequisite** — often **`OUTREACH_SECRETS_PASSPHRASE`**, or **`bundleRelease`** if the passphrase is set but **`ANDROID_UPLOAD_*`** are missing. Add or fix secrets (run **`create-upload-keystore-and-gh-secrets.sh`** or set values manually), then **Re-run jobs** in Actions or push again / dispatch again. **Do not** bump **`outreach.versionCode`** unless Play already consumed that version.
+**Verify:** Run **Android release bundle** once; if this is missing or wrong, the job fails in the step **Require OUTREACH_SECRETS_PASSPHRASE** or during **`setup-secrets.sh`** / **`age`** decrypt — not during Gradle signing yet.
 
-### What the helper script does not do
+---
 
-It does **not** create the Play listing, enroll **Play App Signing**, or upload an **`.aab`** — step 8 remains manual until optional CD is added.
+### Step 3 — Create upload keystore and set four `ANDROID_UPLOAD_*` secrets
+
+**Goal:** CI has the **upload keystore** material as repository secrets (**`ANDROID_UPLOAD_KEYSTORE_BASE64`**, **`ANDROID_UPLOAD_KEYSTORE_PASSWORD`**, **`ANDROID_UPLOAD_KEY_ALIAS`**, **`ANDROID_UPLOAD_KEY_PASSWORD`**).
+
+#### Path A — Script (recommended)
+
+**Do:**
+
+1. On your machine: **`cd`** to the repo root (same folder as **`android/`**).
+2. Ensure **`gh auth status`** shows access to **this** repository with permission to set secrets (**`repo`** scope where applicable).
+3. Run: **`bash android/scripts/create-upload-keystore-and-gh-secrets.sh`**
+4. Enter keystore / key passwords when prompted (or set **`OUTREACH_KEYSTORE_PASSWORD`** etc. — see script header).
+5. Copy the generated **`.jks`** file from the path the script prints (default under **`~/.config/outreach/`**) to **secure backup** (password manager + encrypted backup — not only GitHub).
+
+**Verify:** **Settings → Secrets → Actions** lists all four **`ANDROID_UPLOAD_*`** names. Locally, **`keytool -list -keystore /path/to/your.jks`** opens with your password.
+
+#### Path B — Manual (Studio or `keytool`)
+
+**Do:**
+
+1. Create a keystore with Android Studio (**Build → Generate Signed App Bundle / APK**) or **`keytool -genkeypair`** (RSA, **`PKCS12`** / **`.jks`**, note **alias** and passwords).
+2. Base64 the file (single line, no wrapping), e.g. **`base64 -i upload.jks | tr -d '\n'`** (macOS/Linux adjust if needed).
+3. Create four repository secrets with names exactly as in **[§ GitHub repository secrets](#github-repository-secrets)** under **Upload signing**.
+
+**Verify:** Same as Path A — four secrets present; **`keytool -list`** works on your local copy.
+
+---
+
+### Step 4 — Cut release branch and bump version
+
+**Goal:** **`bundleRelease`** builds the **version** you intend to ship; **`versionCode`** must increase for every new Play upload.
+
+**Do:**
+
+1. **`git checkout -b release/X.Y.Z`** (or **`hotfix/X.Y.Z`** from **`main`**).
+2. Edit **`android/gradle.properties`**: set **`outreach.versionName=X.Y.Z`** and **`outreach.versionCode`** to an integer **greater** than the last build uploaded to Play.
+3. Commit and **push** the branch to **GitHub**.
+
+**Verify:** Branch **`release/X.Y.Z`** (or **`hotfix/...`**) exists on the remote; **`gradle.properties`** reflects the intended **`versionCode`** / **`versionName`**.
+
+---
+
+### Step 5 — Run **Android release bundle** on GitHub Actions
+
+**Goal:** Workflow runs **`bundleRelease`** and uploads an **`.aab`** artifact.
+
+**Do (pick one):**
+
+- **Push:** Push a commit to **`release/**`** or **`hotfix/**`** (same patterns as workflow **`on.push.branches`**), **or**
+- **Dispatch:** **Actions** → **Android release bundle** → **Run workflow**, choose the **`release/`** / **`hotfix/`** branch.
+
+**Verify:** Workflow finishes green; artifact **`release-bundle`** contains **`app-release.aab`** (path under **`android/app/build/outputs/bundle/release/`** in the job).
+
+---
+
+### Step 6 — Download the `.aab`
+
+**Goal:** You have the store bundle file for Play Console upload.
+
+**Do:** Open the successful run → **Artifacts** → download **`release-bundle`**.
+
+**Verify:** Local file exists and ends with **`.aab`**.
+
+---
+
+### Step 7 — Google Play Console (first upload path)
+
+**Goal:** App exists in Play (or new version on existing app); **Play App Signing** is understood; binary is on **Internal** or **Closed testing** before production.
+
+**Do:**
+
+1. Open [Google Play Console](https://play.google.com/console) → select **app** (create if first time).
+2. Confirm **Play App Signing** enrollment for the app (follow Google’s prompts).
+3. **Testing → Internal testing** or **Closed testing** → **Create release** → upload the **`.aab`** from Step 6.
+4. Complete any **policy / content** steps Google requires for that track.
+
+**Verify:** Release shows as processing / available to testers per your track configuration.
+
+---
+
+### Step 8 — OAuth / Firebase / Maps (certificate fingerprints)
+
+**Goal:** Sign-in and Maps work on **release-signed** builds (fingerprints differ from debug).
+
+**Do:**
+
+1. In Play Console, note **App signing key certificate** and **Upload key certificate** **SHA-1** / **SHA-256** if shown.
+2. Follow **[`google-oauth-checklist.md`](google-oauth-checklist.md)** to register the correct hashes in **Google Cloud / Firebase** (upload cert vs Play-held cert — checklist explains).
+
+**Verify:** Internal/closed build can sign in and use Maps per your QA checklist.
+
+---
+
+### Step 9 — QA and GitFlow wrap-up
+
+**Goal:** Release is validated; **`main`** and tags match what you shipped.
+
+**Do:**
+
+1. Test on **internal/closed** testers using **[`release-checklist.md`](release-checklist.md)** as needed.
+2. When satisfied, merge **`release/X.Y.Z` → `main`**, tag **`vX.Y.Z`**, merge **`main` → `develop`**, and promote in Play per **[§ Play Store release (happy path)](#play-store-release-happy-path)** below.
+
+**Verify:** Tag **`vX.Y.Z`** points at the commit that matches the uploaded **`versionCode`**.
+
+---
+
+### Dependency order (secrets)
+
+| Order on the runner | What must already be true |
+|---------------------|---------------------------|
+| 1 | **`OUTREACH_SECRETS_PASSPHRASE`** set → decrypt succeeds |
+| 2 | **`ANDROID_UPLOAD_*`** set → keystore decodes → Gradle signs |
+| 3 | **`bundleRelease`** succeeds → artifact uploads |
+
+Steps **2** (passphrase) and **3** (upload keystore) can be completed in either order **before** first green run; **both** must exist before Step **5** succeeds end-to-end.
+
+---
+
+### If CI already failed once
+
+**Symptom:** Red **Android release bundle** run.
+
+**Do:**
+
+1. Read the **first failed step**: passphrase guard vs **`setup-secrets`** vs **`Decode upload keystore`** vs **`bundleRelease`**.
+2. Fix or add the missing **repository secrets** (Steps **2**–**3**).
+3. **Re-run failed jobs** or re-dispatch the workflow.
+4. **Do not** increase **`outreach.versionCode`** unless Play has already accepted that **`versionCode`** for this app.
+
+---
+
+### What `create-upload-keystore-and-gh-secrets.sh` does not do
+
+It does **not** create the Play listing, finish **Play Console** setup, or upload **`.aab`** to Play — Steps **7**–**9** stay manual unless you add separate CD automation later.
 
 ---
 

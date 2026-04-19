@@ -4,8 +4,9 @@ title = "Outreach"
 [extend]
 useDefault = true
 
-# legacy commit(s) on PR branches still contain this literal in git history; it is the default
-# keytool -dname, not an API key. Current script builds the DN via printf (see keystore helper).
-[[allowlist.regexes]]
-description = "Default X.509 DN placeholder for upload keystore script (false positive for generic-api-key)"
-regex = '''CN=Outreach Upload,O=Outreach,C=US'''
+# Default keytool -dname placeholder (not an API key). Legacy commits may still
+# contain this literal; keep it allowlisted for generic-api-key false positives.
+[allowlist]
+regexes = [
+  '''CN=Outreach Upload,O=Outreach,C=US''',
+]
