@@ -1,5 +1,6 @@
-# Decrypt outreach-secrets.json.age, merge release Maps key, decode upload keystore, bundle signed release AAB.
-# Requires repository secrets OUTREACH_SECRETS_PASSPHRASE and ANDROID_UPLOAD_* (see docs/release-process.md).
+# Decrypt outreach-secrets.json.age, merge release Maps key, materialize upload keystore, bundle signed release AAB.
+# Signing: repo mode — secrets/upload-keystore.jks.age + android_upload_signing in decrypted JSON (same passphrase as JSON .age).
+# Legacy: ANDROID_UPLOAD_* repository secrets + base64 keystore (see docs/release-process.md).
 name: Android release bundle
 
 on:
@@ -21,7 +22,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OUTREACH_SECRETS_PASSPHRASE: ${{ secrets.OUTREACH_SECRETS_PASSPHRASE }}
-      OUTREACH_MAPS_KEY_FIELD: release_api_key
     defaults:
       run:
         working-directory: android
@@ -35,41 +35,92 @@ jobs:
             exit 1
           fi
 
-      - name: Require ANDROID_UPLOAD_* secrets
-        env:
-          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
-          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
-          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
-          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
-        run: |
-          err=0
-          [ -n "${ANDROID_UPLOAD_KEYSTORE_BASE64:-}" ] || { echo "::error::Repository secret ANDROID_UPLOAD_KEYSTORE_BASE64 is empty or unset."; err=1; }
-          [ -n "${ANDROID_UPLOAD_KEYSTORE_PASSWORD:-}" ] || { echo "::error::Repository secret ANDROID_UPLOAD_KEYSTORE_PASSWORD is empty or unset."; err=1; }
-          [ -n "${ANDROID_UPLOAD_KEY_ALIAS:-}" ] || { echo "::error::Repository secret ANDROID_UPLOAD_KEY_ALIAS is empty or unset."; err=1; }
-          [ -n "${ANDROID_UPLOAD_KEY_PASSWORD:-}" ] || { echo "::error::Repository secret ANDROID_UPLOAD_KEY_PASSWORD is empty or unset."; err=1; }
-          exit "$err"
-
       - name: Install age, jq, expect
         run: sudo apt-get update && sudo apt-get install -y age jq expect
+
+      - name: Decrypt consolidated secrets JSON
+        working-directory: ${{ github.workspace }}
+        run: |
+          bash android/scripts/decrypt-age-passphrase.sh secrets/outreach-secrets.json.age "${RUNNER_TEMP}/outreach-secrets.json"
+          jq empty "${RUNNER_TEMP}/outreach-secrets.json"
+
+      - name: Resolve upload signing mode
+        working-directory: ${{ github.workspace }}
+        env:
+          LEGACY_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          LEGACY_STORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          LEGACY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          LEGACY_KEY: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          JSON="${RUNNER_TEMP}/outreach-secrets.json"
+          KS_AGE="${GITHUB_WORKSPACE}/secrets/upload-keystore.jks.age"
+
+          repo_ok=false
+          if [[ -f "${KS_AGE}" ]] && jq -e '
+            .android_upload_signing
+            | type == "object"
+            and (.key_alias | type == "string" and length > 0)
+            and (.keystore_password | type == "string" and length > 0)
+            and (.key_password | type == "string" and length > 0)
+          ' "${JSON}" >/dev/null 2>&1; then
+            repo_ok=true
+          fi
+
+          legacy_ok=false
+          if [[ -n "${LEGACY_B64:-}" && -n "${LEGACY_STORE:-}" && -n "${LEGACY_ALIAS:-}" && -n "${LEGACY_KEY:-}" ]]; then
+            legacy_ok=true
+          fi
+
+          if [[ "${repo_ok}" == true ]]; then
+            echo "SIGNING_MODE=repo" >> "${GITHUB_ENV}"
+            echo "::notice::Upload signing: repo mode (secrets/upload-keystore.jks.age + android_upload_signing in JSON)."
+            exit 0
+          fi
+
+          if [[ "${legacy_ok}" == true ]]; then
+            echo "SIGNING_MODE=legacy" >> "${GITHUB_ENV}"
+            echo "::notice::Upload signing: legacy mode (ANDROID_UPLOAD_* repository secrets)."
+            exit 0
+          fi
+
+          echo "::error::Release signing not configured. Either commit secrets/upload-keystore.jks.age (encrypted with the same passphrase as outreach-secrets.json.age) and add android_upload_signing to plaintext secrets JSON, or set all four ANDROID_UPLOAD_* repository secrets."
+          if [[ -f "${KS_AGE}" ]]; then
+            echo "::error::upload-keystore.jks.age exists but consolidated JSON is missing a complete android_upload_signing object (key_alias, keystore_password, key_password)." >&2
+          fi
+          exit 1
 
       - name: Place Gradle properties for CI
         run: cp gradle.properties.example gradle.properties
 
-      - name: Decrypt secrets and materialize google-services + MAPS_API_KEY
+      - name: Materialize Firebase and Maps (google-services.json, MAPS_API_KEY)
         working-directory: ${{ github.workspace }}
-        run: bash android/scripts/setup-secrets.sh
+        env:
+          OUTREACH_MAPS_KEY_FIELD: release_api_key
+        run: bash android/scripts/setup-secrets.sh "${RUNNER_TEMP}/outreach-secrets.json"
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Decode upload keystore
+      - name: Materialize upload keystore (repo)
+        if: env.SIGNING_MODE == 'repo'
+        working-directory: ${{ github.workspace }}
+        run: |
+          bash android/scripts/decrypt-age-passphrase.sh secrets/upload-keystore.jks.age "${RUNNER_TEMP}/outreach-upload.jks"
+          if ! [[ -s "${RUNNER_TEMP}/outreach-upload.jks" ]]; then
+            echo "::error::Decrypted keystore at ${RUNNER_TEMP}/outreach-upload.jks is missing or empty."
+            exit 1
+          fi
+
+      - name: Materialize upload keystore (legacy)
+        if: env.SIGNING_MODE == 'legacy'
         env:
           ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
         run: |
-          printf '%s' "$ANDROID_UPLOAD_KEYSTORE_BASE64" | base64 -d > "${RUNNER_TEMP}/outreach-upload.jks"
-          if ! [ -s "${RUNNER_TEMP}/outreach-upload.jks" ]; then
+          printf '%s' "${ANDROID_UPLOAD_KEYSTORE_BASE64}" | base64 -d > "${RUNNER_TEMP}/outreach-upload.jks"
+          if ! [[ -s "${RUNNER_TEMP}/outreach-upload.jks" ]]; then
             echo "::error::Decoded keystore at ${RUNNER_TEMP}/outreach-upload.jks is missing or empty (check ANDROID_UPLOAD_KEYSTORE_BASE64)."
             exit 1
           fi
@@ -79,11 +130,24 @@ jobs:
 
       - name: Bundle release
         env:
-          ANDROID_UPLOAD_KEYSTORE_PATH: ${{ runner.temp }}/outreach-upload.jks
-          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
-          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
-          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
-        run: chmod +x ./gradlew && ./gradlew bundleRelease --no-daemon
+          OUTREACH_JSON: ${{ runner.temp }}/outreach-secrets.json
+          LEGACY_STORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          LEGACY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          LEGACY_KEY: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          export ANDROID_UPLOAD_KEYSTORE_PATH="${RUNNER_TEMP}/outreach-upload.jks"
+          if [[ "${SIGNING_MODE}" == repo ]]; then
+            export ANDROID_UPLOAD_KEYSTORE_PASSWORD="$(jq -r '.android_upload_signing.keystore_password' "${OUTREACH_JSON}")"
+            export ANDROID_UPLOAD_KEY_ALIAS="$(jq -r '.android_upload_signing.key_alias' "${OUTREACH_JSON}")"
+            export ANDROID_UPLOAD_KEY_PASSWORD="$(jq -r '.android_upload_signing.key_password' "${OUTREACH_JSON}")"
+          else
+            export ANDROID_UPLOAD_KEYSTORE_PASSWORD="${LEGACY_STORE}"
+            export ANDROID_UPLOAD_KEY_ALIAS="${LEGACY_ALIAS}"
+            export ANDROID_UPLOAD_KEY_PASSWORD="${LEGACY_KEY}"
+          fi
+          chmod +x ./gradlew
+          ./gradlew bundleRelease --no-daemon
 
       - name: Upload release bundle artifact
         uses: actions/upload-artifact@v4

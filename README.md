@@ -31,7 +31,7 @@ The Android app lives in **`android/`** as a **single-module** project (root Gra
 
 Phase **1** (rulesets + **`CODEOWNERS`** without blocking CI yet): **[`docs/github-phase1-setup.md`](docs/github-phase1-setup.md)**.
 
-**Secrets:** Release bundle needs **`OUTREACH_SECRETS_PASSPHRASE`** and **`ANDROID_UPLOAD_*`** — **[`docs/release-process.md`](docs/release-process.md#github-repository-secrets)** and **[`docs/github-actions-secrets.md`](docs/github-actions-secrets.md)**.
+**Secrets:** Release bundle needs **`OUTREACH_SECRETS_PASSPHRASE`** always; upload signing uses either committed **`secrets/upload-keystore.jks.age`** plus **`android_upload_signing`** in decrypted JSON (**repo mode**), or legacy **`ANDROID_UPLOAD_*`** GitHub secrets — **[`secrets/README.md`](secrets/README.md)** (sources, destinations, workflows), **[`docs/release-process.md`](docs/release-process.md#github-repository-secrets)**, **[`docs/github-actions-secrets.md`](docs/github-actions-secrets.md)**.
 
 ---
 
@@ -79,3 +79,4 @@ Read in order of **policy → commands → code → scenarios**: **[`testing-pro
 - **[`developer-onboarding.md`](docs/developer-onboarding.md)** — first machine + emulator **`connectedDebugAndroidTest`**
 - **[`development-process.md`](docs/development-process.md)** — feature branches, PRs, quality gates, **[Cursor / multi-root workspace](docs/development-process.md#cursor-and-multi-root-workspace)**
 - **[`build-process.md`](docs/build-process.md)** — debug vs release artifacts, local secrets wiring
+

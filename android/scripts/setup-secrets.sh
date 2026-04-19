@@ -112,37 +112,7 @@ trap cleanup EXIT
 decrypt_age_to_tmp() {
   local age_file="$1"
   TMPJSON="$(mktemp -t outreach-secrets.XXXXXX.json)"
-  if [[ -n "${OUTREACH_SECRETS_PASSPHRASE:-}" ]]; then
-    command -v expect >/dev/null || {
-      echo "setup-secrets: OUTREACH_SECRETS_PASSPHRASE is set but 'expect' was not found." >&2
-      exit 1
-    }
-    export OUTREACH_AGE_INPUT="${age_file}"
-    export OUTREACH_JSON_OUT="${TMPJSON}"
-    expect <<'EXPECTEOF'
-log_user 0
-set passphrase $env(OUTREACH_SECRETS_PASSPHRASE)
-if {$passphrase eq ""} {
-  puts stderr "setup-secrets: OUTREACH_SECRETS_PASSPHRASE is empty"
-  exit 1
-}
-set timeout -1
-spawn bash -c {exec age -d -o "$1" "$2"} _ $env(OUTREACH_JSON_OUT) $env(OUTREACH_AGE_INPUT)
-expect {
-  -re {Enter passphrase} {
-    send "$passphrase\r"
-    exp_continue
-  }
-  eof
-}
-EXPECTEOF
-  else
-    if [[ ! -t 0 ]]; then
-      echo "setup-secrets: for headless decrypt of .age files, set OUTREACH_SECRETS_PASSPHRASE (and install expect)." >&2
-      exit 1
-    fi
-    age -d -o "${TMPJSON}" "${age_file}"
-  fi
+  bash "${SCRIPT_DIR}/decrypt-age-passphrase.sh" "${age_file}" "${TMPJSON}"
 }
 
 JSON_PATH=""
@@ -169,6 +139,19 @@ jq -e '.google_services | type == "object"' "${JSON_PATH}" >/dev/null 2>&1 || {
   echo "setup-secrets: .google_services must be an object" >&2
   exit 1
 }
+
+if jq -e 'has("android_upload_signing")' "${JSON_PATH}" >/dev/null 2>&1; then
+  jq -e '
+    .android_upload_signing
+    | type == "object"
+    and (.key_alias | type == "string" and length > 0)
+    and (.keystore_password | type == "string" and length > 0)
+    and (.key_password | type == "string" and length > 0)
+  ' "${JSON_PATH}" >/dev/null 2>&1 || {
+    echo "setup-secrets: when set, .android_upload_signing must include non-empty key_alias, keystore_password, key_password" >&2
+    exit 1
+  }
+fi
 
 MAPS_FIELD="${OUTREACH_MAPS_KEY_FIELD:-development_api_key}"
 if [[ "${MAPS_FIELD}" != "development_api_key" && "${MAPS_FIELD}" != "release_api_key" ]]; then

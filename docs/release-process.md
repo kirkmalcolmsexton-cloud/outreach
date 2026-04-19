@@ -11,7 +11,7 @@ Use this checklist the first time you expect CI to produce a **signed** **`.aab`
 - **Repository:** Permission to add **Actions** repository secrets on this GitHub repo (maintainer/admin as required by org policy).
 - **Branch:** Signing and **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** must be **merged** into the branch you will run Actions on (typically **`develop`** → **`release/X.Y.Z`**).
 - **Files in repo:** Committed **`secrets/outreach-secrets.json.age`** and teammate-shared passphrase for decryption (same as local **`encrypt-secrets.sh`** / **`setup-secrets.sh`**).
-- **Tools (for scripted keystore upload):** **JDK** (`keytool`), **GitHub CLI** **`gh`** (`gh auth login`), **Git** clone of the repo.
+- **Tools:** **JDK** (`keytool`), **`age`**, **`jq`**, **`expect`** (repo-mode keystore encrypt/decrypt paths), **GitHub CLI** **`gh`** (**legacy** Path B only — **`gh auth login`**), **Git** clone of the repo.
 
 ---
 
@@ -22,7 +22,7 @@ Use this checklist the first time you expect CI to produce a **signed** **`.aab`
 **Do:**
 
 1. Open [`android/app/build.gradle.kts`](../android/app/build.gradle.kts) and confirm **`signingConfigs`** / **`ANDROID_UPLOAD_*`** wiring exists for **`release`**.
-2. Open **[`.github/workflows/android-release-build.yml`](../.github/workflows/android-release-build.yml)** and confirm jobs decode the keystore and pass env vars into Gradle.
+2. Open **[`.github/workflows/android-release-build.yml`](../.github/workflows/android-release-build.yml)** and confirm jobs materialize the upload keystore (**repo** **`.age`** or **legacy** secrets) and pass **`ANDROID_UPLOAD_*`** env vars into Gradle.
 
 **Verify:** Merged on **`main`** / **`develop`** / your release branch per your team’s process.
 
@@ -42,31 +42,47 @@ Use this checklist the first time you expect CI to produce a **signed** **`.aab`
 
 ---
 
-### Step 3 — Create upload keystore and set four `ANDROID_UPLOAD_*` secrets
+### Step 3 — Upload keystore and CI signing (**repo mode** or **legacy**)
 
-**Goal:** CI has the **upload keystore** material as repository secrets (**`ANDROID_UPLOAD_KEYSTORE_BASE64`**, **`ANDROID_UPLOAD_KEYSTORE_PASSWORD`**, **`ANDROID_UPLOAD_KEY_ALIAS`**, **`ANDROID_UPLOAD_KEY_PASSWORD`**).
+**Goal:** CI can produce **`${RUNNER_TEMP}/outreach-upload.jks`** and Gradle **`ANDROID_UPLOAD_*`** env vars. Pick **one** approach:
 
-#### Path A — Script (recommended)
+- **Repo mode (recommended):** Commit **`secrets/upload-keystore.jks.age`** (same passphrase as **`outreach-secrets.json.age`**) and add **`android_upload_signing`** to plaintext consolidated JSON before regenerating **`outreach-secrets.json.age`**. No GitHub **`ANDROID_UPLOAD_*`** secrets needed.
+- **Legacy:** Store the keystore as **`ANDROID_UPLOAD_KEYSTORE_BASE64`** plus three password/alias secrets — **[§ Upload signing](#upload-signing)**.
 
-**Do:**
+The workflow prefers **repo mode** when **`secrets/upload-keystore.jks.age`** exists **and** decrypted JSON contains a complete **`android_upload_signing`** object; otherwise it requires all four legacy secrets.
 
-1. On your machine: **`cd`** to the repo root (same folder as **`android/`**).
-2. Ensure **`gh auth status`** shows access to **this** repository with permission to set secrets (**`repo`** scope where applicable).
-3. Run: **`bash android/scripts/create-upload-keystore-and-gh-secrets.sh`**
-4. Enter keystore / key passwords when prompted (or set **`OUTREACH_KEYSTORE_PASSWORD`** etc. — see script header).
-5. Copy the generated **`.jks`** file from the path the script prints (default under **`~/.config/outreach/`**) to **secure backup** (password manager + encrypted backup — not only GitHub).
-
-**Verify:** **Settings → Secrets → Actions** lists all four **`ANDROID_UPLOAD_*`** names. Locally, **`keytool -list -keystore /path/to/your.jks`** opens with your password.
-
-#### Path B — Manual (Studio or `keytool`)
+#### Path A — Repo mode script
 
 **Do:**
 
-1. Create a keystore with Android Studio (**Build → Generate Signed App Bundle / APK**) or **`keytool -genkeypair`** (RSA, **`PKCS12`** / **`.jks`**, note **alias** and passwords).
-2. Base64 the file (single line, no wrapping), e.g. **`base64 -i upload.jks | tr -d '\n'`** (macOS/Linux adjust if needed).
-3. Create four repository secrets with names exactly as in **[§ GitHub repository secrets](#github-repository-secrets)** under **Upload signing**.
+1. **`cd`** to the repo root (same folder as **`android/`**).
+2. Install **JDK**, **`age`**, **`expect`**, **`jq`** (encrypt path / instructions).
+3. Run: **`OUTREACH_SIGNING_REPO_MODE=1`** **`bash android/scripts/create-upload-keystore-and-gh-secrets.sh`** (set **`OUTREACH_SECRETS_PASSPHRASE`** for non-interactive **`age -p`**, or use a TTY).  
+   **Or** if you already have a plaintext upload **`.jks`**: **`OUTREACH_SECRETS_PASSPHRASE=... bash android/scripts/encrypt-upload-keystore-age.sh`** (no path arguments — reads **`~/.config/outreach/upload-keystore.jks`** by default, writes **`secrets/upload-keystore.jks.age`**; set **`OUTREACH_UPLOAD_KEYSTORE_PATH`** to use another **`.jks`**).
+4. Merge the printed **`android_upload_signing`** object into **`secrets/outreach-secrets.json`**, run **`bash android/scripts/encrypt-secrets.sh`**, and commit **`secrets/outreach-secrets.json.age`** + **`secrets/upload-keystore.jks.age`**. Never commit plaintext **`*.jks`** or **`outreach-secrets.json`** (both gitignored where applicable).
+5. Back up the local **`.jks`** copy from the script output path (default **`~/.config/outreach/upload-keystore.jks`**) off-disk.
 
-**Verify:** Same as Path A — four secrets present; **`keytool -list`** works on your local copy.
+**Verify:** **`keytool -list`** on your local **`.jks`** works. After push, release workflow logs **Upload signing: repo mode**.
+
+#### Path B — Legacy: `gh` script
+
+**Do:**
+
+1. **`cd`** to the repo root; **`gh auth status`** with permission to set secrets (**`repo`** scope).
+2. **`bash android/scripts/create-upload-keystore-and-gh-secrets.sh`** (do **not** set **`OUTREACH_SIGNING_REPO_MODE`**).
+3. Back up the **`.jks`** file securely (not only GitHub).
+
+**Verify:** **Settings → Secrets → Actions** lists all four **`ANDROID_UPLOAD_*`** names in **[§ Upload signing](#upload-signing)**.
+
+#### Path C — Legacy: manual (Studio or `keytool`)
+
+**Do:**
+
+1. Create a keystore (**RSA**, **`PKCS12`** / **`.jks`**), note **alias** and passwords.
+2. Base64 (single line): e.g. **`base64 -i upload.jks | tr -d '\n'`**.
+3. Create the four repository secrets exactly as in **[§ Upload signing](#upload-signing)**.
+
+**Verify:** Same as Path B — secrets present; **`keytool -list`** works locally.
 
 ---
 
@@ -152,11 +168,11 @@ Use this checklist the first time you expect CI to produce a **signed** **`.aab`
 
 | Order on the runner | What must already be true |
 |---------------------|---------------------------|
-| 1 | **`OUTREACH_SECRETS_PASSPHRASE`** set → decrypt succeeds |
-| 2 | **`ANDROID_UPLOAD_*`** set → keystore decodes → Gradle signs |
+| 1 | **`OUTREACH_SECRETS_PASSPHRASE`** set → **`outreach-secrets.json.age`** decrypt succeeds |
+| 2 | **Repo mode:** **`upload-keystore.jks.age`** + **`android_upload_signing`** → keystore decrypt; **Legacy:** **`ANDROID_UPLOAD_*`** → base64 decode |
 | 3 | **`bundleRelease`** succeeds → artifact uploads |
 
-Steps **2** (passphrase) and **3** (upload keystore) can be completed in either order **before** first green run; **both** must exist before Step **5** succeeds end-to-end.
+Steps **2** (passphrase) and **3** (signing material) can be prepared in either order **before** first green run; **both** passphrase and signing configuration must exist before Step **5** succeeds end-to-end.
 
 ---
 
@@ -166,8 +182,8 @@ Steps **2** (passphrase) and **3** (upload keystore) can be completed in either 
 
 **Do:**
 
-1. Read the **first failed step**: passphrase guard vs **`setup-secrets`** vs **`Decode upload keystore`** vs **`bundleRelease`**.
-2. Fix or add the missing **repository secrets** (Steps **2**–**3**).
+1. Read the **first failed step**: passphrase guard vs **`setup-secrets`** vs **`Resolve upload signing mode`** vs **`Materialize upload keystore`** vs **`bundleRelease`**.
+2. Fix or add the missing **repository secrets** or committed **`.age`** files / JSON fields (Steps **2**–**3**).
 3. **Re-run failed jobs** or re-dispatch the workflow.
 4. **Do not** increase **`outreach.versionCode`** unless Play has already accepted that **`versionCode`** for this app.
 
@@ -191,6 +207,10 @@ Each row maps to **Settings → Secrets and variables → Actions → New reposi
 
 ### Upload signing
 
+**Repo mode:** Files **`secrets/upload-keystore.jks.age`** and **`android_upload_signing`** in consolidated JSON (**[`docs/outreach-secrets.schema.json`](outreach-secrets.schema.json)**). Same passphrase as **`outreach-secrets.json.age`** — see **Step 3 Path A**.
+
+**Legacy (GitHub Actions secrets only — skip if using repo mode):**
+
 | Secret | Purpose | Used by |
 |--------|---------|---------|
 | **`ANDROID_UPLOAD_KEYSTORE_BASE64`** | Upload keystore file (binary), **base64-encoded** (single line) | **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** |
@@ -198,7 +218,7 @@ Each row maps to **Settings → Secrets and variables → Actions → New reposi
 | **`ANDROID_UPLOAD_KEY_ALIAS`** | Key alias inside the keystore | Same |
 | **`ANDROID_UPLOAD_KEY_PASSWORD`** | Key password | Same |
 
-Populate **`ANDROID_UPLOAD_*`** with **[`android/scripts/create-upload-keystore-and-gh-secrets.sh`](../android/scripts/create-upload-keystore-and-gh-secrets.sh)** or manually. **`GITHUB_TOKEN`** is automatic and is not a repository secret.
+Populate legacy **`ANDROID_UPLOAD_*`** with **[`android/scripts/create-upload-keystore-and-gh-secrets.sh`](../android/scripts/create-upload-keystore-and-gh-secrets.sh)** (without **`OUTREACH_SIGNING_REPO_MODE`**) or manually. **`GITHUB_TOKEN`** is automatic and is not a repository secret.
 
 Secrets are **not** passed to **`pull_request`** workflows from forks — see **[`github-actions-secrets.md`](github-actions-secrets.md#fork-and-pull-request-caveat)**.
 
@@ -254,7 +274,7 @@ This repo follows **classic GitFlow**: **`main`** matches what ships on **Google
 
 ## Automation
 
-**[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** runs on **`workflow_dispatch`** and on **push** to **`release/**`** or **`hotfix/**`**. It decrypts secrets, decodes the upload keystore, runs **`./gradlew bundleRelease`**, and uploads the **`.aab`** as the **`release-bundle`** artifact.
+**[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** runs on **`workflow_dispatch`** and on **push** to **`release/**`** or **`hotfix/**`**. It decrypts consolidated secrets, materializes the upload keystore (**repo** **`.age`** or **legacy** base64), runs **`./gradlew bundleRelease`**, and uploads the **`.aab`** as the **`release-bundle`** artifact.
 
 For workflows, **`gh`**, and merge gates, see **[`ci-cd.md`](ci-cd.md)**. Secret names and fork caveats: **[`github-actions-secrets.md`](github-actions-secrets.md)**.
 
