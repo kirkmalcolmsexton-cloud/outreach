@@ -7,7 +7,7 @@
 # Usage:
 #   OUTREACH_SECRETS_PASSPHRASE=... encrypt-age-passphrase.sh INPUT_FILE OUTPUT.age
 # TTY: omit env; age prompts twice.
-#
+
 set -euo pipefail
 
 usage() {
@@ -20,7 +20,9 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 if [[ $# -ne 2 ]]; then
-  echo "encrypt-age-passphrase: usage: encrypt-age-passphrase.sh INPUT_FILE OUTPUT.age" >&2
+  echo "encrypt-age-passphrase: need two arguments (or use -h/--help)." >&2
+  echo "" >&2
+  usage
   exit 1
 fi
 
