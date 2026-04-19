@@ -39,4 +39,5 @@ object TestTags {
     const val SETTINGS_VALIDATE = "settings_validate"
     const val SETTINGS_SYNC = "settings_sync"
     const val SETTINGS_ZIP_SECTION = "settings_zip_section"
+    const val SETTINGS_APP_VERSION = "settings_app_version"
 }

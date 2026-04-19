@@ -42,6 +42,7 @@ import java.time.format.DateTimeFormatter
 import org.outreach.core.model.AppConfig
 import org.outreach.feature.map.formatBriefComment
 import org.outreach.ui.testtags.TestTags
+import org.outreach.app.BuildConfig
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -627,6 +628,14 @@ fun SettingsScreen(
         if (!statusText.isNullOrBlank()) {
             Text(statusText)
         }
+        Spacer(modifier = Modifier.height(24.dp))
+        val debugSuffix = if (BuildConfig.DEBUG) " (debug)" else ""
+        Text(
+            text = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})$debugSuffix",
+            modifier = Modifier.testTag(TestTags.SETTINGS_APP_VERSION),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

@@ -38,6 +38,12 @@ android {
         userGradleProperties.getProperty("MAPS_API_KEY"),
     ).firstOrNull { !it.isNullOrBlank() } ?: ""
 
+    val outreachVersionCode =
+        rootProject.findProperty("outreach.versionCode")?.toString()?.toIntOrNull() ?: 1
+    val outreachVersionName =
+        rootProject.findProperty("outreach.versionName")?.toString()?.trim().orEmpty()
+            .ifEmpty { "0.1.0" }
+
     namespace = "org.outreach.app"
     compileSdk = 34
 
@@ -45,8 +51,8 @@ android {
         applicationId = "org.outreach.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = outreachVersionCode
+        versionName = outreachVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         resValue("string", "google_maps_key", mapsApiKey)
 
