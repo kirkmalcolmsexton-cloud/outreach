@@ -1,6 +1,7 @@
 import java.io.File
 import java.util.Properties
 import org.gradle.api.Project
+import org.gradle.api.invocation.Gradle
 
 plugins {
     id("com.android.application")
@@ -47,6 +48,23 @@ private fun resolveReleaseSigning(androidRoot: Project): ReleaseSigningMaterial?
 }
 
 private val releaseSigning = resolveReleaseSigning(project.rootProject)
+
+/** True when the CLI requested `bundleRelease` (configuration-cache compatible; avoids `doFirst` on that task). */
+private fun Gradle.startParameterRequestsBundleRelease(): Boolean =
+    startParameter.taskNames.any { name ->
+        name.endsWith("bundleRelease", ignoreCase = true)
+    }
+
+if (gradle.startParameterRequestsBundleRelease() && releaseSigning == null) {
+    error(
+        """
+        Release signing is not configured.
+        CI: set ANDROID_UPLOAD_* repository secrets and decode keystore to ANDROID_UPLOAD_KEYSTORE_PATH before Gradle runs.
+        Local: copy android/keystore.properties.example to android/keystore.properties.
+        First-time secrets: bash android/scripts/create-upload-keystore-and-gh-secrets.sh
+        """.trimIndent(),
+    )
+}
 
 android {
     val localProperties = Properties().apply {
@@ -151,21 +169,6 @@ android {
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.15"
-    }
-}
-
-afterEvaluate {
-    tasks.named("bundleRelease").configure {
-        doFirst {
-            require(releaseSigning != null) {
-                """
-                Release signing is not configured.
-                CI: set ANDROID_UPLOAD_* repository secrets and decode keystore to ANDROID_UPLOAD_KEYSTORE_PATH before Gradle runs.
-                Local: copy android/keystore.properties.example to android/keystore.properties.
-                First-time secrets: bash android/scripts/create-upload-keystore-and-gh-secrets.sh
-                """.trimIndent()
-            }
-        }
     }
 }
 
