@@ -3,6 +3,7 @@
 #
 # Repo setting (required): disable Code scanning "Default setup" while this advanced workflow exists,
 # or SARIF upload fails with "advanced configurations cannot be processed when the default setup is enabled".
+# If that persists, check organization-level security configurations/policies that enforce default setup.
 # See https://docs.github.com/en/code-security/code-scanning/enabling-code-scanning/configuring-default-setup-for-code-scanning
 name: CodeQL
 
