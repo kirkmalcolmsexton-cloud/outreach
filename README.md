@@ -659,6 +659,7 @@ Store credentials are **orthogonal** to GitFlow: **`google-services.json`** and 
 - **`docs/outreach-secrets.schema.json`** (JSON schema for **`secrets/outreach-secrets.example.json`**)
 - **`docs/google-oauth-checklist.md`** (Google sign-in / Firebase OAuth troubleshooting)
 - **`docs/ui-testing.md`** (UI automation suite, test tags, instrumentation extras)
+- **`docs/test-scenarios-given-when-then.md`** (instrumentation scenarios in Given–When–Then form)
 
 **OAuth test users:** In the Google Cloud project for your Web client ID (`google_web_client_id`), add accounts under **Test users** while the app is not in production — [Google Auth platform → Audience](https://console.cloud.google.com/auth/audience) or [OAuth consent screen](https://console.cloud.google.com/apis/credentials/consent).
 
