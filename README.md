@@ -79,3 +79,4 @@ Read in order of **policy → commands → code → scenarios**: **[`testing-pro
 - **[`developer-onboarding.md`](docs/developer-onboarding.md)** — first machine + emulator **`connectedDebugAndroidTest`**
 - **[`development-process.md`](docs/development-process.md)** — feature branches, PRs, quality gates, **[Cursor / multi-root workspace](docs/development-process.md#cursor-and-multi-root-workspace)**
 - **[`build-process.md`](docs/build-process.md)** — debug vs release artifacts, local secrets wiring
+
