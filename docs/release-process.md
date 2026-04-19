@@ -90,7 +90,7 @@ This repo follows **classic GitFlow**: **`main`** matches what ships on **Google
 
 ### Play Store release (happy path)
 
-1. Confirm **`develop`** builds and tests (**`./gradlew assembleDebug`**, instrumentation tests per README CLI quick reference) and fix blockers.
+1. Confirm **`develop`** builds and tests (**`./gradlew assembleDebug`**, instrumentation tests per **[`docs/testing-guide.md`](testing-guide.md)**). For device-specific or **`real`**-auth validation before cut, follow **[`docs/testing-process.md`](testing-process.md)** and **[`docs/testing-guide.md`](testing-guide.md)** (including **[`android/scripts/run-physical-ui-tests.sh`](../android/scripts/run-physical-ui-tests.sh)** when using a USB phone). Fix blockers before branching.
 2. **`git checkout develop && git pull`** then **`git checkout -b release/X.Y.Z`** (same **`X.Y.Z`** as **`versionName`** — no **`v`** in the branch name).
 3. Edit **`android/gradle.properties`**: set **`outreach.versionName`** to **`X.Y.Z`** and bump **`outreach.versionCode`** by at least **1** vs the last Play upload.
 4. Stabilize on **`release/X.Y.Z`** with bugfixes only.
@@ -117,12 +117,17 @@ This repo follows **classic GitFlow**: **`main`** matches what ships on **Google
 
 **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** runs on **`workflow_dispatch`** and on **push** to **`release/**`** or **`hotfix/**`**. It decrypts secrets, decodes the upload keystore, runs **`./gradlew bundleRelease`**, and uploads the **`.aab`** as the **`release-bundle`** artifact.
 
-For the full workflow matrix and fork caveats, see **[`github-actions-secrets.md`](github-actions-secrets.md)**.
+For workflows, **`gh`**, and merge gates, see **[`ci-cd.md`](ci-cd.md)**. Secret names and fork caveats: **[`github-actions-secrets.md`](github-actions-secrets.md)**.
 
 ---
 
 ## Related documentation
 
+- **[`ci-cd.md`](ci-cd.md)** — GitHub Actions workflows, **`gh`** CLI, required checks, local Gradle parity
+- **[`testing-process.md`](testing-process.md)** — unit vs UI tests, when to run hardware / **`real`** auth
+- **[`testing-guide.md`](testing-guide.md)** — Gradle commands, **`adb`**, instrumentation flags, troubleshooting
+- **[`developer-onboarding.md`](developer-onboarding.md)** — first-time machine and emulator setup
+- **[`build-process.md`](build-process.md)** — debug/release artifacts and secrets overview
 - **[`github-actions-secrets.md`](github-actions-secrets.md)** — workflow matrix, fork caveat
 - **[`google-oauth-checklist.md`](google-oauth-checklist.md)** — OAuth / Maps / Firebase SHA-1
 - **[`release-checklist.md`](release-checklist.md)** — QA before ship

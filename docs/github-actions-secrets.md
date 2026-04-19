@@ -1,5 +1,7 @@
 # GitHub Actions — secrets and CI credentials
 
+**Workflows, jobs, and `gh` CLI:** **[`ci-cd.md`](ci-cd.md)**.
+
 **Operator checklist** of repository secret names and release steps: **[`release-process.md`](release-process.md#github-repository-secrets)**.
 
 You can populate the **`ANDROID_UPLOAD_*`** secrets by running **[`android/scripts/create-upload-keystore-and-gh-secrets.sh`](../android/scripts/create-upload-keystore-and-gh-secrets.sh)** locally (see **[`release-process.md` → First-time release](release-process.md#first-time-release)**).

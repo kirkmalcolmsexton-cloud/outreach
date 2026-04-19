@@ -1,0 +1,5 @@
+# Repo-specific gitleaks config (optional allowlists live below).
+title = "Outreach"
+
+[extend]
+useDefault = true

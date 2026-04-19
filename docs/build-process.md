@@ -1,0 +1,44 @@
+# Build process
+
+How to produce Outreach Android artifacts locally: debug builds for development, configuring Firebase and Maps secrets, and where release signing fits relative to CI.
+
+## Debug builds (daily development)
+
+Working directory: **`android/`**.
+
+```bash
+./gradlew assembleDebug
+```
+
+Windows PowerShell uses **`.\gradlew.bat`** instead of **`./gradlew`**.
+
+**`local.properties`** should contain **`sdk.dir=…`** once Android Studio has synced the project (points Gradle at your SDK).
+
+## Secrets (Firebase / Maps)
+
+The app needs **`google-services.json`** under **`android/app/`** and a **Maps** key merged into **`local.properties`** (**`MAPS_API_KEY`**). Recommended path:
+
+1. Obtain team **`secrets/outreach-secrets.json.age`** and passphrase (out of band).
+2. Install **`age`** and **`jq`**.
+3. From **`android/`**, run **`./scripts/setup-secrets.sh`** with **`OUTREACH_SECRETS_PASSPHRASE`** set.
+
+Full narrative, **`encrypt-secrets.sh`**, manual Firebase download, and **`~/etc/outreach.env`** one-shot builds live in **[`docs/developer-onboarding.md`](developer-onboarding.md)**. Repository secret names for Actions are in **[`docs/github-actions-secrets.md`](github-actions-secrets.md)**.
+
+## CI parity
+
+- **`./gradlew check`** approximates the **`verify`** job (wrapper validation aside, CI may substitute **`google-services.json.example`** — see workflow).
+- **`./gradlew connectedDebugAndroidTest -PoutreachAuthResolution=mock`** on an emulator mirrors the **`instrumented`** job.
+
+See **[`docs/testing-process.md`](testing-process.md)** for when to add physical-device runs. Commands and **`adb`** details: **[`docs/testing-guide.md`](testing-guide.md)**.
+
+## Release builds (AAB) and signing
+
+Release artifacts use **`bundleRelease`**. Locally, signing can use **`android/keystore.properties`** (gitignored); CI uses environment variables **`ANDROID_UPLOAD_*`** set from GitHub secrets.
+
+Authoritative steps for keystore custody, **`bundleRelease`**, and Play uploads: **[`docs/release-process.md`](release-process.md)**. Signing wiring is implemented in **`android/app/build.gradle.kts`**.
+
+## Related links
+
+- **[`ci-cd.md` → CLI quick reference](ci-cd.md#cli-quick-reference)** — Gradle shortcuts and CI parity.
+- **[`docs/testing-process.md`](testing-process.md)** — validation before merge or release.
+- **[`docs/testing-guide.md`](testing-guide.md)** — Gradle, devices, instrumentation flags.
