@@ -1,5 +1,9 @@
 # CodeQL must compile Java/Kotlin under tracing. Autobuild runs from repo root and fails for this
 # layout (Gradle lives in android/). Mirror android.yml prep, then assembleDebug from android/.
+#
+# Repo setting (required): disable Code scanning "Default setup" while this advanced workflow exists,
+# or SARIF upload fails with "advanced configurations cannot be processed when the default setup is enabled".
+# See https://docs.github.com/en/code-security/code-scanning/enabling-code-scanning/configuring-default-setup-for-code-scanning
 name: CodeQL
 
 on:
@@ -39,7 +43,7 @@ jobs:
           java-version: "17"
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: java-kotlin
           build-mode: manual
@@ -62,5 +66,10 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon
 
+      # SARIF: `output` is where CodeQL writes results on the runner before upload to Code Scanning.
+      # It does not fix "default setup + advanced" SARIF rejection — disable Default setup on the repo.
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
+        with:
+          output: ${{ github.workspace }}/codeql-results
+          checkout_path: ${{ github.workspace }}
