@@ -6,7 +6,7 @@
 #
 # Usage:
 #   ./scripts/setup-secrets.sh [PATH]
-#   PATH defaults to secrets/outreach-secrets.json.age if present, else secrets/outreach-secrets.json
+#   Default input: see resolve_input below (real plaintext overrides committed .age when present).
 #   Override with OUTREACH_SECRETS_FILE=/path/to/file
 
 set -euo pipefail
@@ -23,10 +23,12 @@ Usage: $(basename "$0") [PATH_TO_JSON_OR_AGE]
     ${ANDROID_DIR}/app/google-services.json
     ${ANDROID_DIR}/local.properties (merges MAPS_API_KEY; preserves sdk.dir and other keys)
 
-  Default secret file search:
-    1) OUTREACH_SECRETS_FILE if set
+  Default secret file search (when no PATH and OUTREACH_SECRETS_FILE unset):
+    1) ${OUTREACH_ROOT}/secrets/outreach-secrets.json if present and not the repo template placeholder
     2) ${OUTREACH_ROOT}/secrets/outreach-secrets.json.age if it exists
-    3) ${OUTREACH_ROOT}/secrets/outreach-secrets.json if it exists
+    3) ${OUTREACH_ROOT}/secrets/outreach-secrets.json (template / last resort)
+
+  Override with OUTREACH_SECRETS_FILE=/path/to/file or pass PATH as first argument.
 
   Passphrase for .age files:
     Set OUTREACH_SECRETS_PASSPHRASE, or run in a terminal and enter when age prompts.
@@ -48,6 +50,17 @@ command -v age >/dev/null || {
   exit 1
 }
 
+# Exit 0 if FILE matches secrets/outreach-secrets.example.json template (still not safe to ship, but avoids
+# silently preferring plaintext over .age when the dev only copied the example).
+secrets_file_is_example_placeholder() {
+  local f="$1"
+  [[ -f "$f" ]] || return 1
+  jq -e '
+    ((.google_services.project_info.project_id? // "") == "outreach-placeholder")
+    or (((.google_services.client[0].api_key // [])[0].current_key? // "") == "AIzaSyPlaceholderReplaceForProd")
+  ' "$f" >/dev/null 2>&1
+}
+
 resolve_input() {
   if [[ -n "${1:-}" ]]; then
     echo "$1"
@@ -59,6 +72,10 @@ resolve_input() {
   fi
   local age_file="${OUTREACH_ROOT}/secrets/outreach-secrets.json.age"
   local json_file="${OUTREACH_ROOT}/secrets/outreach-secrets.json"
+  if [[ -f "${json_file}" ]] && ! secrets_file_is_example_placeholder "${json_file}"; then
+    echo "${json_file}"
+    return
+  fi
   if [[ -f "${age_file}" ]]; then
     echo "${age_file}"
     return
