@@ -16,7 +16,7 @@ The Android app lives in **`android/`** as a **single-module** project (root Gra
 
 | Who you are | Where to start |
 |---------------|----------------|
-| **New to Android** — viewing this on GitHub and need the shortest path to **build** and run **tests on the emulator** | Prep: [**Before you clone**](#before-you-clone), then [**First-time setup (emulator)**](#first-time-setup-emulator) |
+| **New to Android** — viewing this on GitHub and need the shortest path to **build** and run **tests on the emulator** | Prep: [**Before you clone**](#before-you-clone), then [**First-time setup (emulator)**](#first-time-setup-emulator). If you already have **`secrets/outreach-secrets.json.age`** and a passphrase from the team, you can [**build from the terminal with `~/etc/outreach.env`**](#6b-terminal-build-with-etcoutreachenv-team-age-file) after [**Firebase config**](#5-firebase-config-required-for-google-sign-in--firebase) basics (**`age`** / **`jq`**). |
 | **Past first setup** — exploring Outreach using a **real phone** over USB | [**Physical device testing**](#physical-device-testing) (includes [**debug ingest**](#debug-ingest-port-7747)) |
 | **Comfortable with Android** — you want **commands, flags, and scripts** without extra narrative | [**CLI quick reference**](#cli-quick-reference) |
 | **Cursor / multi-root workspace** — you use the workspace repo next to Outreach | [**Cursor workspace**](#cursor-workspace) |
@@ -239,7 +239,7 @@ This writes **`app/google-services.json`** and merges **`MAPS_API_KEY`** into **
 
 **Maintainers — create or refresh the encrypted file**
 
-Assemble plaintext JSON with the same shape as **`secrets/outreach-secrets.example.json`** (schema: **`docs/outreach-secrets.schema.json`**). Include the full Firebase **`google_services`** object from your downloaded **`google-services.json`** and your Maps key as **`maps_api_key`**.
+Assemble plaintext JSON with the same shape as **`secrets/outreach-secrets.example.json`** (schema: **`docs/outreach-secrets.schema.json`**). Include the full Firebase **`google_services`** object from your downloaded **`google-services.json`**, a dev/feature Maps key as **`development_api_key`**, and a release Maps key as **`release_api_key`**.
 
 ```bash
 # From repo root — copy and edit secrets/outreach-secrets.json (gitignored)
@@ -249,6 +249,22 @@ Assemble plaintext JSON with the same shape as **`secrets/outreach-secrets.examp
 ```
 
 Set **`OUTREACH_SECRETS_PASSPHRASE`** for non-interactive encryption (requires **`expect`**, included on macOS; Linux: **`sudo apt install expect`**).
+
+**Extract plaintext `outreach-secrets.json` from `outreach-secrets.json.age`**
+
+Use **`age`** with the same passphrase you use for encryption (install **`age`** as in step 1). From the **`outreach`** repo root:
+
+```bash
+age -d -o secrets/outreach-secrets.json secrets/outreach-secrets.json.age
+```
+
+You will be prompted for the passphrase; **`secrets/outreach-secrets.json`** is **gitignored** so it is not committed after editing. To print JSON to the terminal only (no output file):
+
+```bash
+age -d secrets/outreach-secrets.json.age
+```
+
+Headless decrypt (scripted/CI) uses **`OUTREACH_SECRETS_PASSPHRASE`** and **`expect`** the same way as **`android/scripts/setup-secrets.sh`** and **`encrypt-secrets.sh`**; for day-to-day editing, prefer an interactive terminal and a local **`secrets/outreach-secrets.json`** you delete or re-encrypt when done.
 
 **Fallback — manual Firebase download**
 
@@ -281,6 +297,49 @@ cd android
 
 If this succeeds, JDK + SDK + Gradle are correct.
 
+### 6b. Terminal build with `~/etc/outreach.env` (team `.age` file)
+
+Use this when your team shares **`secrets/outreach-secrets.json.age`** and a passphrase — one script decrypts to **`secrets/outreach-secrets.json`**, runs **`android/scripts/setup-secrets.sh`** (writes **`app/google-services.json`** and **`MAPS_API_KEY`** in **`local.properties`**), then **`assembleDebug`**.
+
+1. **Ask your admin** for the shared passphrase **`OUTREACH_SECRETS_PASSPHRASE`** (same value used to encrypt the **`.age`** file). Treat it like a password: do not paste it into tickets, chat logs, or the repo.
+
+2. **Create** **`~/etc/outreach.env`** on your machine (**macOS / Linux / Git Bash / WSL** — not PowerShell). Example:
+
+   ```bash
+   mkdir -p ~/etc
+   nano ~/etc/outreach.env   # or vim, VS Code, etc.
+   ```
+
+   Minimum content (use your real passphrase from the admin):
+
+   ```bash
+   # Outreach — local only. chmod 600 this file.
+   export OUTREACH_SECRETS_PASSPHRASE='paste-passphrase-from-admin-here'
+   ```
+
+   Lock down permissions:
+
+   ```bash
+   chmod 600 ~/etc/outreach.env
+   ```
+
+   **Windows:** Use **Git Bash** so **`~/etc`** resolves under your profile the same way as other **`scripts/*.sh`** steps in this README.
+
+3. Install **`age`**, **`jq`**, and **`expect`** if you have not already ([**Firebase config → step 1**](#5-firebase-config-required-for-google-sign-in--firebase); **`expect`** is standard on macOS; **Ubuntu:** **`sudo apt install expect`**).
+
+4. Ensure **`secrets/outreach-secrets.json.age`** is present in your clone (from the team).
+
+5. From the **`outreach`** repo root (**parent** of **`android/`**), run:
+
+   ```bash
+   chmod +x ./scripts/build-with-secrets-from-env.sh   # once
+   ./scripts/build-with-secrets-from-env.sh
+   ```
+
+   The script **errors** if **`~/etc/outreach.env`** is missing, if **`OUTREACH_SECRETS_PASSPHRASE`** is empty after sourcing it, or if decrypt fails (wrong passphrase or missing **`.age`**).
+
+This is equivalent to manually running **`age -d`**, **`setup-secrets.sh`**, and **`./gradlew assembleDebug`**, but wired for automation.
+
 ### 7. Run UI tests on the default Outreach emulator
 
 Use a **bash** shell (**macOS**, **Linux**, **Git Bash**, or **WSL**) for this block. Working directory: **`outreach/android`**.
@@ -312,6 +371,7 @@ Prefer setting **`ANDROID_SERIAL`** via **`resolve-outreach-emulator-serial.sh`*
 
 - **Android Studio’s “Android” project view** (Project tool window dropdown) shows **`app`**, **`manifests`**, **`java`**, **`res`**. Opening only the repo root in **VS Code / Cursor** shows flat files — use Studio for the Android layout.
 - **`local.properties`** with **`sdk.dir=...`** is usually created when you open **`android/`** in Studio.
+- Team **`.age`** secrets: put the passphrase only in **`~/etc/outreach.env`** (never in the repo). Use **[**§6b**](#6b-terminal-build-with-etcoutreachenv-team-age-file)** to decrypt, materialize Firebase/Maps files, and **build** in one command.
 
 ---
 
@@ -405,10 +465,13 @@ Single test class:
 
 ### Scripts
 
+Most paths below assume **`cd outreach/android`**. The **env** build script is the exception: run it from the **`outreach/`** repo root (see last row).
+
 | Script | Purpose |
 |--------|---------|
 | **`./scripts/setup-secrets.sh`** | From **`outreach-secrets.json`** or **`.json.age`**, write **`app/google-services.json`** and merge **`MAPS_API_KEY`** into **`local.properties`** ([**Firebase setup**](#5-firebase-config-required-for-google-sign-in--firebase)). |
 | **`./scripts/encrypt-secrets.sh`** | Maintainer: encrypt plaintext **`secrets/outreach-secrets.json`** → **`secrets/outreach-secrets.json.age`**. |
+| **`../scripts/build-with-secrets-from-env.sh`** | Run from **`outreach/`** repo root (**not** from **`android/`**): source **`~/etc/outreach.env`** (must define **`OUTREACH_SECRETS_PASSPHRASE`**), decrypt **`.age`** → **`secrets/outreach-secrets.json`**, run **`setup-secrets.sh`**, **`./gradlew assembleDebug`** ([**§6b**](#6b-terminal-build-with-etcoutreachenv-team-age-file)). |
 | **`./scripts/start-outreach-emulator.sh`** | Create default AVD if missing; start emulator ([**details**](#start-emulator-without-studio)) |
 | **`./scripts/wait-for-adb-online.sh`** | Block until **`adb`** → **`device`** and boot complete; **`ADB_WAIT_TIMEOUT`** / **`ADB_WAIT_INTERVAL`** |
 | **`./scripts/resolve-outreach-emulator-serial.sh`** | Print **`adb`** serial for the Outreach default AVD (use with **`ANDROID_SERIAL`**) |
@@ -498,7 +561,7 @@ Outreach development does **not** require that workspace; you can open **`androi
 
 Phase **1** is rulesets + **`CODEOWNERS`** without blocking on CI until jobs exist — **[`docs/github-phase1-setup.md`](docs/github-phase1-setup.md)**. Phase **2** adds **`.github/workflows/`** as below; after green runs, enable **required status checks** using the **exact** strings from the PR **Checks** tab (often **`Workflow name / job id`**, e.g. **`Android CI / verify`**).
 
-**Secrets:** No custom repository secrets are required for the current jobs — **[`docs/github-actions-secrets.md`](docs/github-actions-secrets.md)**.
+**Secrets:** Most jobs need no custom repository secrets. **[`android-release-build.yml`](.github/workflows/android-release-build.yml)** requires **`OUTREACH_SECRETS_PASSPHRASE`** — see **[`docs/github-actions-secrets.md`](docs/github-actions-secrets.md)**.
 
 ### What runs in CI
 
@@ -507,6 +570,8 @@ Phase **1** is rulesets + **`CODEOWNERS`** without blocking on CI until jobs exi
 | **[`.github/workflows/android.yml`](.github/workflows/android.yml)** | **`verify`** | Gradle **wrapper validation**, copy **`google-services.json.example`** → **`google-services.json`**, **`./gradlew check`**. |
 | Same | **`instrumented`** | **`connectedDebugAndroidTest`** with **`-PoutreachAuthResolution=mock`** on an API 34 emulator; runs after **`verify`**. See **`docs/ui-testing.md`**. |
 | **[`.github/workflows/android-release-readiness.yml`](.github/workflows/android-release-readiness.yml)** | **`release-readiness`** | Only when the PR **base** is **`release/**`** or **`hotfix/**`**: **[`android/scripts/ci-release-version-check.sh`](android/scripts/ci-release-version-check.sh)** + **`lintRelease`** + **`testReleaseUnitTest`**. |
+| **[`.github/workflows/android-release-build.yml`](.github/workflows/android-release-build.yml)** | **`bundle-release`** | On **`workflow_dispatch`** or **`push`** to **`release/**` / **`hotfix/**`**: decrypt **`outreach-secrets.json.age`**, **`bundleRelease`**, upload **`.aab`**. |
+| **[`.github/workflows/android-version-bump.yml`](.github/workflows/android-version-bump.yml)** | **`bump`** | Manual: run on a **`release/**` or **`hotfix/**`** branch only; updates **`android/gradle.properties`** **`outreach.version*`** (never **`main`**). |
 | **[`.github/workflows/dependency-review.yml`](.github/workflows/dependency-review.yml)** | **`dependency-review`** | Dependency Review (enable **dependency graph** on the repo). |
 | **[`.github/workflows/secret-scan.yml`](.github/workflows/secret-scan.yml)** | **`gitleaks`** | Secret scanning. |
 
@@ -548,7 +613,7 @@ This repo follows a **classic GitFlow** workflow: **`main`** holds production-re
 | **`release/X.Y.Z`** | Cut from **`develop`** when preparing a release. **Freeze new features** — only fixes and polish. Bump app version here (see below). |
 | **`hotfix/X.Y.Z`** | Branch from **`main`** for urgent production fixes; merge to **`main`**, tag, then merge **`main` → `develop`** so fixes are not lost. |
 
-**Version numbers** live in **`android/app/build.gradle.kts`**: **`versionCode`** must **always increase** between Play uploads (Play requirement); **`versionName`** is the user-visible semver (**`X.Y.Z`**). Bump them on **`release/`** or **`hotfix/`** branches before building the store artifact.
+**Version numbers** live in **`android/gradle.properties`** (**`outreach.versionCode`**, **`outreach.versionName`**); **`android/app/build.gradle.kts`** wires them into the Android plugin. **`versionCode`** must **always increase** between Play uploads (Play requirement); **`versionName`** is the user-visible semver (**`X.Y.Z`**). Bump them on **`release/`** or **`hotfix/`** branches before building the store artifact.
 
 ### Feature work (routine)
 
@@ -561,7 +626,7 @@ This repo follows a **classic GitFlow** workflow: **`main`** holds production-re
 
 1. Confirm **`develop`** builds and tests (**`./gradlew assembleDebug`**, instrumentation tests per [CLI quick reference](#cli-quick-reference)) and fix blockers.
 2. **`git checkout develop && git pull`** then **`git checkout -b release/X.Y.Z`** (same **`X.Y.Z`** as **`versionName`** — no **`v`** in the branch name).
-3. Edit **`android/app/build.gradle.kts`**: set **`versionName`** to **`X.Y.Z`** and bump **`versionCode`** by at least **1** vs the last upload.
+3. Edit **`android/gradle.properties`**: set **`outreach.versionName`** to **`X.Y.Z`** and bump **`outreach.versionCode`** by at least **1** vs the last upload.
 4. Stabilize on **`release/X.Y.Z`** with bugfixes only — no new features unless you abandon this release branch and cut a new one later.
 5. QA using **`docs/release-checklist.md`** and sign-in/maps checks (**`docs/google-oauth-checklist.md`**). From **`android/`**, build a signed bundle: **`./gradlew bundleRelease`** (configure **release signing** on the machine or builder you use; the repo does not commit **`signingConfigs`**).
 6. Upload the **AAB** to Play **Internal** or **Closed testing** first. Ensure **OAuth / Maps / Firebase** allow your **release signing SHA-1** (debug vs upload vs Play App Signing differ — see **`docs/google-oauth-checklist.md`**).
@@ -573,7 +638,7 @@ This repo follows a **classic GitFlow** workflow: **`main`** holds production-re
 ### Hotfix (production emergency)
 
 1. **`git checkout main && git pull`**
-2. **`git checkout -b hotfix/X.Y.Z`** — bump **`versionCode`** and patch **`versionName`** in **`build.gradle.kts`**, fix, **`./gradlew bundleRelease`**, upload to Play.
+2. **`git checkout -b hotfix/X.Y.Z`** — bump **`outreach.versionCode`** and patch **`outreach.versionName`** in **`android/gradle.properties`**, fix, **`./gradlew bundleRelease`**, upload to Play.
 3. Merge **`hotfix/X.Y.Z` → `main`**, tag **`vX.Y.Z`**, then **`git checkout develop && git merge main`** (or cherry-pick equivalent) so **`develop`** stays in sync.
 
 ### Secrets and signing (not tied to Git branches)

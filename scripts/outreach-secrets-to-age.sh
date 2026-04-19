@@ -2,7 +2,7 @@
 # Generate secrets/outreach-secrets.json.age from plaintext secrets/outreach-secrets.json.
 #
 # This is a thin wrapper around android/scripts/encrypt-secrets.sh (age encryption + jq
-# validation of maps_api_key and google_services). Prefer running this from the repo root:
+# validation of development_api_key and google_services). Prefer running this from the repo root:
 #
 #   ./scripts/outreach-secrets-to-age.sh
 #

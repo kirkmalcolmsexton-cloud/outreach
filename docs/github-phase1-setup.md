@@ -18,7 +18,7 @@ Pick one style and document it for contributors:
 - **`feature/<short-description>`**, or  
 - **`SCRUM-123-short-description`** (ticket prefix — keys match **[Jira](https://kirkmalcolmsexton.atlassian.net)**).
 
-Semantic version in **`release/X.Y.Z`** and **`hotfix/X.Y.Z`** matches **`android/app/build.gradle.kts`** **`versionName`** when those branches ship.
+Semantic version in **`release/X.Y.Z`** and **`hotfix/X.Y.Z`** matches **`android/gradle.properties`** **`outreach.versionName`** when those branches ship.
 
 ## 3. Rulesets (GitHub: Settings → Rules → Rulesets)
 
@@ -45,7 +45,7 @@ Keep this information **out of git** (password manager or internal doc). Replace
 | Upload keystore file | (path or escrow reference) |
 | Keystore passphrase | |
 | Play App Signing: app signing key held by | Google / note |
-| GitHub Actions secrets (Phase 2 CD) | See **[`github-actions-secrets.md`](github-actions-secrets.md)** — current CI uses none beyond `GITHUB_TOKEN` |
+| GitHub Actions secrets (Phase 2 CD) | See **[`github-actions-secrets.md`](github-actions-secrets.md)** — **`android-release-build`** uses **`OUTREACH_SECRETS_PASSPHRASE`**; other workflows typically need only `GITHUB_TOKEN` |
 
 ## 5. After Phase 1
 
