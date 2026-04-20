@@ -26,7 +26,8 @@ fi
 file_ver=""
 if [[ -f "$PROPS_FILE" ]]; then
   file_ver="$(
-    grep -E '^[[:space:]]*outreach\.versionName[[:space:]]*=' "$PROPS_FILE" 2>/dev/null | head -1 \
+    { grep -E '^[[:space:]]*outreach\.versionName[[:space:]]*=' "$PROPS_FILE" 2>/dev/null || true; } \
+      | head -1 \
       | sed -E 's/^[[:space:]]*outreach\.versionName[[:space:]]*=[[:space:]]*"?([^"#[:space:]]+).*/\1/' \
       | tr -d '\r'
   )"
@@ -35,7 +36,8 @@ fi
 # Legacy fallback: older branches may still use a quoted literal in build.gradle.kts (not outreachVersionName).
 if [[ -z "$file_ver" && -f "$GRADLE_FILE" ]]; then
   file_ver="$(
-    grep -E '^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"[^"]+"' "$GRADLE_FILE" 2>/dev/null | head -1 \
+    { grep -E '^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"[^"]+"' "$GRADLE_FILE" 2>/dev/null || true; } \
+      | head -1 \
       | sed -E 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' \
       | tr -d '\r'
   )"

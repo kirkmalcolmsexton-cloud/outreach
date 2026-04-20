@@ -96,6 +96,8 @@ The workflow prefers **repo mode** when **`secrets/upload-keystore.jks.age`** ex
 2. Edit **`android/gradle.properties`**: set **`outreach.versionName=X.Y.Z`** and **`outreach.versionCode`** to an integer **greater** than the last build uploaded to Play.
 3. Commit and **push** the branch to **GitHub**.
 
+**Or** run **`bash android/scripts/create-release-branch.sh`** from the repo root (see **`--help`**). You may omit **`X.Y.Z`** and **`--version-code`**: the script reads **`outreach.versionName`** / **`outreach.versionCode`** from the **base branch** on **`origin`**, applies a **patch** semver bump by default (**`--bump minor|major`** to change), and sets **`versionCode`** to **remote + 1** unless you pass **`--version-code`**. Always confirm **`versionCode`** against the last Play upload. Optional: **`--hotfix`**, **`--base BRANCH`**, **`--no-push`**, **`--dry-run`**. Requires a clean working tree; aborts if the base branch is missing, the branch already exists, or **`git pull --ff-only`** cannot fast-forward.
+
 **Verify:** Branch **`release/X.Y.Z`** (or **`hotfix/...`**) exists on the remote; **`gradle.properties`** reflects the intended **`versionCode`** / **`versionName`**.
 
 ---
