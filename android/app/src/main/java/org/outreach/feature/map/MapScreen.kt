@@ -1003,6 +1003,13 @@ private suspend fun loadDrivingRoutePreview(
     if (dest == null) {
         return Result.failure(IllegalArgumentException("Could not resolve destination address."))
     }
+    if (ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) != PackageManager.PERMISSION_GRANTED
+    ) {
+        return Result.failure(SecurityException("Location permission not granted."))
+    }
     val fused = LocationServices.getFusedLocationProviderClient(context)
     val loc = try {
         fused.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).await()
