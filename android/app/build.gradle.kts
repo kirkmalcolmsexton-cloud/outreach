@@ -104,13 +104,16 @@ android {
         rootProject.findProperty("outreach.versionName")?.toString()?.trim().orEmpty()
             .ifEmpty { "0.1.0" }
 
+    val outreachCompileSdk = 35
+    val outreachTargetSdk = 35
+
     namespace = "org.outreach.app"
-    compileSdk = 34
+    compileSdk = outreachCompileSdk
 
     defaultConfig {
         applicationId = "org.outreach.app"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = outreachTargetSdk
         versionCode = outreachVersionCode
         versionName = outreachVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -133,6 +136,27 @@ android {
             testInstrumentationRunnerArguments["outreach.ui_test.auth_resolution"] = authResolution
         }
     }
+
+    // #region agent log
+    run {
+        val logFile = File("/Users/aqeel/development/cursor/workspaces/initial/.cursor/debug-c4c90d.log")
+        val payload =
+            linkedMapOf(
+                "sessionId" to "c4c90d",
+                "hypothesisId" to "H1",
+                "location" to "android/app/build.gradle.kts:android",
+                "message" to "configured SDK levels (SCRUM-42)",
+                "data" to
+                    mapOf(
+                        "compileSdk" to outreachCompileSdk,
+                        "targetSdk" to outreachTargetSdk,
+                    ),
+                "timestamp" to System.currentTimeMillis(),
+                "runId" to "post-fix",
+            )
+        logFile.appendText(JsonOutput.toJson(payload) + "\n")
+    }
+    // #endregion
 
     signingConfigs {
         if (releaseSigning != null) {
