@@ -104,6 +104,23 @@ android {
         rootProject.findProperty("outreach.versionName")?.toString()?.trim().orEmpty()
             .ifEmpty { "0.1.0" }
 
+    // #region agent log
+    run {
+        fun j(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
+        val logPath =
+            File("/Users/aqeel/development/cursor/workspaces/initial/.cursor/debug-ebc6cd.log")
+        val propRaw = rootProject.findProperty("outreach.versionCode")?.toString().orEmpty()
+        val cliOverride =
+            gradle.startParameter.projectProperties["outreach.versionCode"].orEmpty()
+        val tasksJson =
+            gradle.startParameter.taskNames.joinToString(",", "[", "]") { "\"${j(it)}\"" }
+        val line =
+            """{"sessionId":"ebc6cd","timestamp":${System.currentTimeMillis()},"location":"android/app/build.gradle.kts:outreachVersion","message":"Resolved Play versionCode for defaultConfig","hypothesisId":"H1","data":{"effectiveVersionCode":$outreachVersionCode,"effectiveVersionName":"${j(outreachVersionName)}","findProperty_outreach.versionCode":"${j(propRaw)}","cli_-P_outreach.versionCode":"${j(cliOverride)}","tasks":$tasksJson,"bundleReleaseRequested":${gradle.startParameterRequestsBundleRelease()}},"runId":"gradle-config"}
+"""
+        logPath.appendText(line)
+    }
+    // #endregion
+
     val outreachCompileSdk = 35
     val outreachTargetSdk = 35
 
