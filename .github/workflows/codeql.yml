@@ -56,9 +56,6 @@ jobs:
       - name: Place Firebase config for CI
         run: cp app/google-services.json.example app/google-services.json
 
-      - name: Place Gradle properties for CI
-        run: cp gradle.properties.example gradle.properties
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:

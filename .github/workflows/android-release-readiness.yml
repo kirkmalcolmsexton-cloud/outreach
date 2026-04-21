@@ -32,10 +32,6 @@ jobs:
       - name: Place Firebase config for CI
         run: cp app/google-services.json.example app/google-services.json
 
-      # Same as android.yml: real android/gradle.properties is gitignored; CI must use the tracked template.
-      - name: Place Gradle properties for CI
-        run: cp gradle.properties.example gradle.properties
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Cut release/X.Y.Z or hotfix/X.Y.Z from develop or main, bump version keys in the tracked
-# Gradle props file (android/gradle.properties or android/gradle.properties.example), commit, push.
+# Gradle props file (tracked android/gradle.properties), commit, push.
 #
 # Requires a clean working tree by default; --ignore-unstaged allows unstaged edits and
 # untracked files (still aborts if there are staged changes). Omit X.Y.Z and/or --version-code to derive them from the
@@ -40,7 +40,7 @@ outreach.versionName and outreach.versionCode in the resolved Gradle properties 
 Version (optional):
   X.Y.Z              Semantic version (must match branch suffix). If omitted, read
                      outreach.versionName from the base branch on ${REMOTE} (tracked
-                     android/gradle.properties or android/gradle.properties.example), then bump:
+                     tracked android/gradle.properties), then bump:
                      patch (default), minor, or major (--bump).
   --version-code N   outreach.versionCode. If omitted, set to outreach.versionCode from
                      the base branch plus 1 (verify against Play Console before upload).
@@ -216,17 +216,9 @@ if ! ref_exists_remote "$BASE_BRANCH"; then
   die "Base branch '${BASE_BRANCH}' not found on ${REMOTE}."
 fi
 
-# Tracked version source: full gradle.properties when present on the remote; else .example (local
-# gradle.properties is often gitignored and missing from origin).
-PROP_FILE=""
-for cand in android/gradle.properties android/gradle.properties.example; do
-  if git cat-file -e "${REMOTE}/${BASE_BRANCH}:${cand}" 2>/dev/null; then
-    PROP_FILE="$cand"
-    break
-  fi
-done
-if [[ -z "$PROP_FILE" ]]; then
-  die "No version file on ${REMOTE}/${BASE_BRANCH} (tried android/gradle.properties and android/gradle.properties.example)."
+PROP_FILE="android/gradle.properties"
+if ! git cat-file -e "${REMOTE}/${BASE_BRANCH}:${PROP_FILE}" 2>/dev/null; then
+  die "Tracked ${PROP_FILE} missing on ${REMOTE}/${BASE_BRANCH}."
 fi
 PROP_PATH="${GIT_ROOT}/${PROP_FILE}"
 
