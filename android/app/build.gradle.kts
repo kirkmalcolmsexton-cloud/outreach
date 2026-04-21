@@ -1,4 +1,3 @@
-import groovy.json.JsonOutput
 import java.io.File
 import java.util.Properties
 import org.gradle.api.Project
@@ -103,23 +102,6 @@ android {
     val outreachVersionName =
         rootProject.findProperty("outreach.versionName")?.toString()?.trim().orEmpty()
             .ifEmpty { "0.1.0" }
-
-    // #region agent log
-    run {
-        fun j(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")
-        val logPath =
-            File("/Users/aqeel/development/cursor/workspaces/initial/.cursor/debug-ebc6cd.log")
-        val propRaw = rootProject.findProperty("outreach.versionCode")?.toString().orEmpty()
-        val cliOverride =
-            gradle.startParameter.projectProperties["outreach.versionCode"].orEmpty()
-        val tasksJson =
-            gradle.startParameter.taskNames.joinToString(",", "[", "]") { "\"${j(it)}\"" }
-        val line =
-            """{"sessionId":"ebc6cd","timestamp":${System.currentTimeMillis()},"location":"android/app/build.gradle.kts:outreachVersion","message":"Resolved Play versionCode for defaultConfig","hypothesisId":"H1","data":{"effectiveVersionCode":$outreachVersionCode,"effectiveVersionName":"${j(outreachVersionName)}","findProperty_outreach.versionCode":"${j(propRaw)}","cli_-P_outreach.versionCode":"${j(cliOverride)}","tasks":$tasksJson,"bundleReleaseRequested":${gradle.startParameterRequestsBundleRelease()}},"runId":"gradle-config"}
-"""
-        logPath.appendText(line)
-    }
-    // #endregion
 
     val outreachCompileSdk = 35
     val outreachTargetSdk = 35
@@ -240,54 +222,3 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.7.1")
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
-
-// #region agent log
-private val agentCarDebugLog =
-    File("/Users/aqeel/development/cursor/workspaces/initial/.cursor/debug-ae852b.log")
-
-private fun agentAppendCarDebugNdjson(payload: Map<String, Any?>) {
-    agentCarDebugLog.parentFile?.mkdirs()
-    agentCarDebugLog.appendText(JsonOutput.toJson(payload) + "\n")
-}
-// #endregion
-
-// #region agent log
-tasks.register("agentLogCarMergedManifest") {
-    group = "verification"
-    dependsOn("processReleaseManifest")
-    doLast {
-        val merged =
-            layout.buildDirectory
-                .file("intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml")
-                .get()
-                .asFile
-        if (!merged.isFile) return@doLast
-        val text = merged.readText()
-        val carPermRegex =
-            Regex("""<uses-permission[^>]*android:name="(androidx\.car\.app\.[^"]+)"""")
-        val carPermissions =
-            carPermRegex.findAll(text).map { it.groupValues[1] }.distinct().sorted().toList()
-        agentAppendCarDebugNdjson(
-            mapOf(
-                "sessionId" to "ae852b",
-                "timestamp" to System.currentTimeMillis(),
-                "location" to "app/build.gradle.kts:agentLogCarMergedManifest",
-                "message" to "merged release manifest androidx.car.app permission scan",
-                "hypothesisId" to "H1",
-                "runId" to "post-fix",
-                "data" to
-                    mapOf(
-                        "mergedManifestPath" to merged.absolutePath,
-                        "carPermissionNames" to carPermissions,
-                        "hasAccessSurface" to
-                            carPermissions.contains("androidx.car.app.ACCESS_SURFACE"),
-                        "hasNavigationTemplates" to
-                            carPermissions.contains("androidx.car.app.NAVIGATION_TEMPLATES"),
-                        "mergedHasNavigationCategory" to
-                            text.contains("androidx.car.app.category.NAVIGATION"),
-                    ),
-            ),
-        )
-    }
-}
-// #endregion
