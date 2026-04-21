@@ -2,7 +2,7 @@
 # verify and instrumented run in parallel to shorten wall-clock time. Tradeoff: if verify would
 # fail (compile/unit tests), instrumented may still spend time building APKs + emulator (~30+ min).
 # Copy google-services from example so no Firebase secrets are required.
-# Copy gradle.properties from example (real file is gitignored; enables AndroidX flags in CI).
+# android/gradle.properties is committed (version + Gradle flags); CI uses it from checkout.
 name: Android CI
 
 on:
@@ -43,9 +43,6 @@ jobs:
       - name: Place Firebase config for CI
         run: cp app/google-services.json.example app/google-services.json
 
-      - name: Place Gradle properties for CI
-        run: cp gradle.properties.example gradle.properties
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -73,9 +70,6 @@ jobs:
 
       - name: Place Firebase config for CI
         run: cp app/google-services.json.example app/google-services.json
-
-      - name: Place Gradle properties for CI
-        run: cp gradle.properties.example gradle.properties
 
       - uses: actions/setup-java@v4
         with:

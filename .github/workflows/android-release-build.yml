@@ -90,9 +90,6 @@ jobs:
           fi
           exit 1
 
-      - name: Place Gradle properties for CI
-        run: cp gradle.properties.example gradle.properties
-
       - name: Materialize Firebase and Maps (google-services.json, MAPS_API_KEY)
         working-directory: ${{ github.workspace }}
         env:
