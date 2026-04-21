@@ -179,3 +179,4 @@ rm -f "${TMP_PROPS}"
 
 echo "setup-secrets: wrote ${GOOGLE_SERVICES_OUT}"
 echo "setup-secrets: merged MAPS_API_KEY (${MAPS_FIELD}) into ${LOCAL_PROPS}"
+echo "setup-secrets: Google Sign-In: register each machine's debug SHA-1 in Firebase (Project settings → Your Android app → Add fingerprint). Run: (cd \"${ANDROID_DIR}\" && ./gradlew :app:signingReport) — see Variant: debug → SHA1."
