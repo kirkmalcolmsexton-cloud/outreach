@@ -1,3 +1,4 @@
+import groovy.json.JsonOutput
 import java.io.File
 import java.util.Properties
 import org.gradle.api.Project
@@ -219,3 +220,54 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.7.1")
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
+
+// #region agent log
+private val agentCarDebugLog =
+    File("/Users/aqeel/development/cursor/workspaces/initial/.cursor/debug-ae852b.log")
+
+private fun agentAppendCarDebugNdjson(payload: Map<String, Any?>) {
+    agentCarDebugLog.parentFile?.mkdirs()
+    agentCarDebugLog.appendText(JsonOutput.toJson(payload) + "\n")
+}
+// #endregion
+
+// #region agent log
+tasks.register("agentLogCarMergedManifest") {
+    group = "verification"
+    dependsOn("processReleaseManifest")
+    doLast {
+        val merged =
+            layout.buildDirectory
+                .file("intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml")
+                .get()
+                .asFile
+        if (!merged.isFile) return@doLast
+        val text = merged.readText()
+        val carPermRegex =
+            Regex("""<uses-permission[^>]*android:name="(androidx\.car\.app\.[^"]+)"""")
+        val carPermissions =
+            carPermRegex.findAll(text).map { it.groupValues[1] }.distinct().sorted().toList()
+        agentAppendCarDebugNdjson(
+            mapOf(
+                "sessionId" to "ae852b",
+                "timestamp" to System.currentTimeMillis(),
+                "location" to "app/build.gradle.kts:agentLogCarMergedManifest",
+                "message" to "merged release manifest androidx.car.app permission scan",
+                "hypothesisId" to "H1",
+                "runId" to "post-fix",
+                "data" to
+                    mapOf(
+                        "mergedManifestPath" to merged.absolutePath,
+                        "carPermissionNames" to carPermissions,
+                        "hasAccessSurface" to
+                            carPermissions.contains("androidx.car.app.ACCESS_SURFACE"),
+                        "hasNavigationTemplates" to
+                            carPermissions.contains("androidx.car.app.NAVIGATION_TEMPLATES"),
+                        "mergedHasNavigationCategory" to
+                            text.contains("androidx.car.app.category.NAVIGATION"),
+                    ),
+            ),
+        )
+    }
+}
+// #endregion
