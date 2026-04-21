@@ -104,13 +104,16 @@ android {
         rootProject.findProperty("outreach.versionName")?.toString()?.trim().orEmpty()
             .ifEmpty { "0.1.0" }
 
+    val outreachCompileSdk = 35
+    val outreachTargetSdk = 35
+
     namespace = "org.outreach.app"
-    compileSdk = 34
+    compileSdk = outreachCompileSdk
 
     defaultConfig {
         applicationId = "org.outreach.app"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = outreachTargetSdk
         versionCode = outreachVersionCode
         versionName = outreachVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
