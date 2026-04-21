@@ -8,7 +8,7 @@ android.nonTransitiveRClass=true
 # Copy this file to android/gradle.properties for local development.
 
 # App version — single source of truth (must match release/hotfix branch X.Y.Z when shipping).
-outreach.versionCode=2
-outreach.versionName=0.1.1
+outreach.versionCode=3
+outreach.versionName=0.1.2
 
 MAPS_API_KEY=your_maps_key_here
