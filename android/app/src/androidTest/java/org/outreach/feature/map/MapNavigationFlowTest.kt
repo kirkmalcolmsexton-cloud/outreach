@@ -9,7 +9,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -25,6 +24,7 @@ import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.RawHouseholdRow
 import org.outreach.core.model.SourceMetadata
 import org.outreach.testing.ComposeHostActivity
+import org.outreach.testing.createComposeHostRule
 import org.outreach.testing.OutreachUiTestEnvironment
 import org.outreach.testing.waitForSemanticTree
 import org.outreach.ui.testtags.TestTags
@@ -39,7 +39,7 @@ class MapNavigationFlowTest {
     )
 
     @get:Rule(order = 1)
-    val composeRule = createAndroidComposeRule<ComposeHostActivity>()
+    val composeRule = createComposeHostRule()
 
     private val householdId = "nav_test_household"
     private val destLat = 41.88

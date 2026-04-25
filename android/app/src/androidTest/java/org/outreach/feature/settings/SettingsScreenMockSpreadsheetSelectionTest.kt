@@ -3,7 +3,6 @@ package org.outreach.feature.settings
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -15,13 +14,14 @@ import org.junit.Rule
 import org.junit.Test
 import org.outreach.core.model.AppConfig
 import org.outreach.testing.ComposeHostActivity
+import org.outreach.testing.createComposeHostRule
 import org.outreach.testing.FakeSheetsApi
 import org.outreach.testing.waitForSemanticTree
 import org.outreach.ui.testtags.TestTags
 
 class SettingsScreenMockSpreadsheetSelectionTest {
     @get:Rule
-    val composeRule = createAndroidComposeRule<ComposeHostActivity>()
+    val composeRule = createComposeHostRule()
 
     @Test
     fun selectingMockedSpreadsheet_syncUsesSampleData() = runBlocking {
