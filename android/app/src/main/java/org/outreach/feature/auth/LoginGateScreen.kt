@@ -136,8 +136,7 @@ class AuthViewModel(
     fun setMissingWebClientIdError() {
         _error.value =
             "Missing OAuth Web Client ID. In Firebase: Authentication → Sign-in method → Google → copy " +
-                "the Web client ID. Paste it into res/values/strings.xml as google_web_client_id " +
-                "(replace PASTE_WEB_CLIENT_ID), or replace app/google-services.json with a downloaded file " +
+                "the Web client ID. Replace app/google-services.json with a downloaded file " +
                 "that includes oauth_client entries."
     }
 
@@ -254,13 +253,6 @@ class AuthViewModel(
 
     private fun resolveWebClientId(context: Context): String {
         val pkg = context.packageName
-        val manual = context.resources.getIdentifier("google_web_client_id", "string", pkg)
-        if (manual != 0) {
-            val v = context.getString(manual).trim()
-            if (v.isNotEmpty() && v != PLACEHOLDER_WEB_CLIENT_ID) {
-                return v
-            }
-        }
         val generated = context.resources.getIdentifier("default_web_client_id", "string", pkg)
         if (generated != 0) {
             val v = context.getString(generated).trim()
@@ -293,8 +285,5 @@ class AuthViewModel(
 
     private companion object {
         private const val TAG = "OutreachAuth"
-
-        /** Same value as default in res/values/strings.xml — replace with your real Web client ID. */
-        private const val PLACEHOLDER_WEB_CLIENT_ID = "PASTE_WEB_CLIENT_ID"
     }
 }

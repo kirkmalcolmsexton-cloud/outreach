@@ -52,7 +52,7 @@ fun SettingsScreen(
     pickedSpreadsheetDisplayName: String? = null,
     savedConfig: AppConfig = AppConfig(),
     briefCommentOptions: List<String> = emptyList(),
-    earliestVisitationDate: LocalDate = LocalDate.now(),
+    earliestVisitationDate: LocalDate = LocalDate.ofEpochDay(0),
     onUpdateConfig: (AppConfig) -> Unit = {},
     onValidateSchema: (spreadsheetId: String, tabs: Set<String>, onResult: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     onLoadTabs: (spreadsheetId: String, onResult: (Result<List<String>>) -> Unit) -> Unit = { _, onResult -> onResult(Result.success(emptyList())) },
