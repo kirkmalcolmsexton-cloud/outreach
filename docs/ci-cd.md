@@ -8,7 +8,7 @@ How Outreach runs automation on GitHub: workflows, job names you see in **Checks
 
 **Rulesets and Code Owners (Phase 1):** **[`docs/github-phase1-setup.md`](github-phase1-setup.md)**.
 
-**Local commands that approximate CI Android jobs** (Gradle, emulator, **`connectedDebugAndroidTest`**): **[`docs/testing-guide.md`](testing-guide.md)**.
+**Local commands** use the same **`android/scripts/build.sh`** as GitHub Actions (not a “mirror”): **[`docs/testing-guide.md`](testing-guide.md)**.
 
 ---
 
@@ -34,12 +34,19 @@ Single test class: **`-Pandroid.testInstrumentationRunnerArguments.class=fully.q
 
 Default Outreach emulator AVD: **`Galaxy_S938U_API36_x86_64`**. Once the emulator is online: **`export ANDROID_SERIAL="$(./scripts/resolve-outreach-emulator-serial.sh)"`**.
 
-### Parity with CI jobs (**Android CI**)
+### Same script as CI (**Android CI**)
 
-| CI job | Approximate local command |
-|--------|---------------------------|
-| **`verify`** | `./gradlew check` (CI also substitutes **`google-services.json`** from example and a placeholder **`MAPS_API_KEY`**) |
-| **`instrumented`** | Start an emulator (API **34** if you want strict parity), then `./gradlew connectedDebugAndroidTest -PoutreachAuthResolution=mock` |
+From **`cd outreach/android`**, the workflow runs **`scripts/build.sh`**. Run the same subcommands locally:
+
+| CI job / step | Local (same as Actions) |
+|-----------------|-------------------------|
+| **`verify`** | **`./scripts/build.sh` `ci` `verify`** |
+| **`instrumented`** (build) | **`./scripts/build.sh` `ci` `build-instrumented-apks`** |
+| **`instrumented`** (after emulator) | **`./scripts/build.sh` `ci` `connected-mock`** |
+
+(Thin **`android-ci.sh`** still forwards to **`build.sh` `ci`**.)
+
+The script copies **`app/google-services.json.example`** to **`app/google-services.json`** and uses the same default **`MAPS_API_KEY`** as the workflow when unset. For API **34** / **Nexus 6** parity, use the **`instrumented`** job’s emulator settings or a matching AVD.
 
 Release paths (**`lintRelease`**, **`testReleaseUnitTest`**, **`bundleRelease`**) need release signing env or placeholders as in workflows — see **`build-process.md`** and **`release-process.md`**.
 
@@ -55,10 +62,10 @@ Status check names in the GitHub UI are usually **`Workflow display name / job i
 
 | Workflow file | Workflow `name` (UI) | Job id | What it does |
 |----------------|------------------------|--------|----------------|
-| [`.github/workflows/android.yml`](../.github/workflows/android.yml) | **Android CI** | **`verify`** | Gradle wrapper validation, **`google-services.json`** from example, **`./gradlew check`**. |
-| Same | Same | **`instrumented`** | API **34** emulator, **`connectedDebugAndroidTest`** with **`-PoutreachAuthResolution=mock`** after **`verify`**. |
+| [`.github/workflows/android.yml`](../.github/workflows/android.yml) | **Android CI** | **`verify`** | **`android/scripts/build.sh` `ci` `verify`** (Firebase example + **`check`**). |
+| Same | Same | **`instrumented`** | **`build.sh` `ci` `build-instrumented-apks`**, then API **34** / **x86_64** emulator, then **`build.sh` `ci` `connected-mock`**. |
 | [`.github/workflows/android-release-readiness.yml`](../.github/workflows/android-release-readiness.yml) | **Android release readiness** | **`release-readiness`** | When PR **base** is **`release/**`** or **`hotfix/**`**: version check script, **`lintRelease`**, **`testReleaseUnitTest`**. |
-| [`.github/workflows/android-release-build.yml`](../.github/workflows/android-release-build.yml) | **Android release bundle** | **`bundle-release`** | **`workflow_dispatch`** or **push** to **`release/**`** / **`hotfix/**`**: runs **`android/scripts/build-release-bundle.sh`**, upload **`.aab`**. See **[`github-actions-secrets.md`](github-actions-secrets.md)**. |
+| [`.github/workflows/android-release-build.yml`](../.github/workflows/android-release-build.yml) | **Android release bundle** | **`bundle-release`** | **`workflow_dispatch`** or **push** to **`release/**`** / **`hotfix/**`**: runs **`build.sh` `release-bundle`** (alias **`build-release-bundle.sh`**, upload **`.aab`**). See **[`github-actions-secrets.md`](github-actions-secrets.md)**. |
 | [`.github/workflows/android-version-bump.yml`](../.github/workflows/android-version-bump.yml) | **Android version bump** | **`bump`** | Manual only on **`release/**`** / **`hotfix/**`**: bumps **`outreach.version*`** in **`gradle.properties`** (never **`main`**). |
 | [`.github/workflows/dependency-review.yml`](../.github/workflows/dependency-review.yml) | Dependency Review | **`dependency-review`** | Supply-chain review (requires dependency graph where applicable). |
 | [`.github/workflows/secret-scan.yml`](../.github/workflows/secret-scan.yml) | **Secret Scan** | **`gitleaks`** | Secret scanning. |

@@ -2,7 +2,7 @@
 
 ## Project layout (matches single-app Gradle projects like `android-dice`)
 
-- **`android/`** — Gradle root (`settings.gradle.kts`, `build.gradle.kts`, wrapper). Convenience scripts: **`android/scripts/build.sh`** (debug APK), **`android/scripts/build-release-bundle.sh`** (signed release `.aab`).
+- **`android/`** — Gradle root (`settings.gradle.kts`, `build.gradle.kts`, wrapper). Build entry point: **`android/scripts/build.sh`** — **`build.sh debug`**, **`build.sh release-bundle`**, **`build.sh ci …`** (same as GitHub Actions). Thin aliases: `build-release-bundle.sh`, `android-ci.sh`.
 - **`android/app/`** — single Android application module; all Kotlin sources live under `app/src/main/java/` in packages:
   - `org.outreach.app` — `Application`, `MainActivity`, entry wiring.
   - `org.outreach.core.model` — data model + parsers.

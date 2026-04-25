@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Debug-only: allow HTTP to emulator host (10.0.2.2 / adb reverse 127.0.0.1) for Cursor debug ingest. Release keeps default cleartext off. -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:usesCleartextTraffic="true" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:usesCleartextTraffic="true"
+        tools:ignore="UnusedAttribute">
+
+        <!-- Debug-only: same APK as org.outreach.app; registered so PackageManager can resolve
+             Compose-instrumented tests (ActivityScenario + createComposeHostRule). -->
+        <activity
+            android:name="org.outreach.testing.ComposeHostActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+    </application>
 </manifest>
