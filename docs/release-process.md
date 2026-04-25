@@ -22,7 +22,7 @@ Use this checklist the first time you expect CI to produce a **signed** **`.aab`
 **Do:**
 
 1. Open [`android/app/build.gradle.kts`](../android/app/build.gradle.kts) and confirm **`signingConfigs`** / **`ANDROID_UPLOAD_*`** wiring exists for **`release`**.
-2. Open **[`.github/workflows/android-release-build.yml`](../.github/workflows/android-release-build.yml)** and confirm jobs materialize the upload keystore (**repo** **`.age`** or **legacy** secrets) and pass **`ANDROID_UPLOAD_*`** env vars into Gradle.
+2. Open **[`.github/workflows/android-release-build.yml`](../.github/workflows/android-release-build.yml)** and confirm the job runs **`android/scripts/build-release-bundle.sh`** (same as local) with repository **`OUTREACH_SECRETS_PASSPHRASE`** and, for **legacy** signing, the four **`ANDROID_UPLOAD_*`** secrets.
 
 **Verify:** Merged on **`main`** / **`develop`** / your release branch per your team’s process.
 
@@ -30,7 +30,7 @@ Use this checklist the first time you expect CI to produce a **signed** **`.aab`
 
 ### Step 2 — Add `OUTREACH_SECRETS_PASSPHRASE` (one secret)
 
-**Goal:** CI can decrypt **`secrets/outreach-secrets.json.age`** and write **`google-services.json`** + **`MAPS_API_KEY`** before **`bundleRelease`**.
+**Goal:** CI can run **`build-release-bundle.sh`** (same **`setup-secrets.sh`** as local) and write **`google-services.json`** + **`MAPS_API_KEY_DEBUG` / `MAPS_API_KEY_RELEASE`** in **`local.properties`** before **`bundleRelease`**.
 
 **Do:**
 
@@ -184,7 +184,7 @@ Steps **2** (passphrase) and **3** (signing material) can be prepared in either 
 
 **Do:**
 
-1. Read the **first failed step**: passphrase guard vs **`setup-secrets`** vs **`Resolve upload signing mode`** vs **`Materialize upload keystore`** vs **`bundleRelease`**.
+1. Read the **first failed step** (and its log; **`Bundle release`** runs **`build-release-bundle.sh`**, so failures can still map to decrypt, signing mode, keystore, **`setup-secrets`**, or **Gradle**).
 2. Fix or add the missing **repository secrets** or committed **`.age`** files / JSON fields (Steps **2**–**3**).
 3. **Re-run failed jobs** or re-dispatch the workflow.
 4. **Do not** increase **`outreach.versionCode`** unless Play has already accepted that **`versionCode`** for this app.
@@ -205,7 +205,7 @@ Each row maps to **Settings → Secrets and variables → Actions → New reposi
 
 | Secret | Purpose | Used by |
 |--------|---------|---------|
-| **`OUTREACH_SECRETS_PASSPHRASE`** | Passphrase for **`secrets/outreach-secrets.json.age`** (release Maps key + paths into **`setup-secrets.sh`**) | **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** |
+| **`OUTREACH_SECRETS_PASSPHRASE`** | Passphrase for **`secrets/outreach-secrets.json.age`** (and repo-mode **`upload-keystore.jks.age`**) for **`setup-secrets.sh`** / **build-release-bundle** | **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** |
 
 ### Upload signing
 
@@ -270,13 +270,13 @@ This repo follows **classic GitFlow**: **`main`** matches what ships on **Google
 
 ### Secrets and signing (orthogonal to branches)
 
-**`google-services.json`** and **`MAPS_API_KEY`** come from **`android/scripts/setup-secrets.sh`** or manual setup (see README Firebase section). Document internally who holds the **upload keystore** backup and how **Play App Signing** is configured.
+**`google-services.json`** and Map keys **`MAPS_API_KEY_DEBUG` / `MAPS_API_KEY_RELEASE`** come from **`android/scripts/setup-secrets.sh`** or manual setup (see README Firebase section). Document internally who holds the **upload keystore** backup and how **Play App Signing** is configured.
 
 ---
 
 ## Automation
 
-**[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** runs on **`workflow_dispatch`** and on **push** to **`release/**`** or **`hotfix/**`**. It decrypts consolidated secrets, materializes the upload keystore (**repo** **`.age`** or **legacy** base64), runs **`./gradlew bundleRelease`**, and uploads the **`.aab`** as the **`release-bundle`** artifact.
+**[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** runs on **`workflow_dispatch`** and on **push** to **`release/**`** or **`hotfix/**`**. The job runs **`android/scripts/build-release-bundle.sh`** (identical to local: **`setup-secrets`**, signing **`jq`**, keystore, **`./gradlew bundleRelease`**) and uploads the **`.aab`** as the **`release-bundle`** artifact.
 
 For workflows, **`gh`**, and merge gates, see **[`ci-cd.md`](ci-cd.md)**. Secret names and fork caveats: **[`github-actions-secrets.md`](github-actions-secrets.md)**.
 

@@ -35,13 +35,13 @@ Workflows that do not appear in the table use **`GITHUB_TOKEN`** only (automatic
 |----------|---------|-------------------------------------|
 | [`android.yml`](../.github/workflows/android.yml) | **`verify`**, **`instrumented`** (placeholder Firebase / Maps) | None |
 | [`android-release-readiness.yml`](../.github/workflows/android-release-readiness.yml) | **`release-readiness`** — version check, `lintRelease`, `testReleaseUnitTest` (placeholders) | None |
-| [`android-release-build.yml`](../.github/workflows/android-release-build.yml) | Decrypt JSON **`.age`**, materialize keystore (**repo** or **legacy**), signed **`bundleRelease`**, upload **`.aab`** | **`OUTREACH_SECRETS_PASSPHRASE`**; and **either** **`ANDROID_UPLOAD_*`** (legacy) **or** files in repo (**`upload-keystore.jks.age`** + JSON — no extra GH secrets for signing). |
+| [`android-release-build.yml`](../.github/workflows/android-release-build.yml) | Runs **`android/scripts/build-release-bundle.sh`**: same **`setup-secrets.sh`** as local dev (exports plaintext for signing **`jq`**), materialize keystore (**repo** or **legacy**), signed **`bundleRelease`**, upload **`.aab`** | **`OUTREACH_SECRETS_PASSPHRASE`**; and **either** **`ANDROID_UPLOAD_*`** (legacy) **or** files in repo (**`upload-keystore.jks.age`** + JSON — no extra GH secrets for signing). |
 | [`dependency-review.yml`](../.github/workflows/dependency-review.yml) | **Dependency Review** | None |
 | [`secret-scan.yml`](../.github/workflows/secret-scan.yml) | **gitleaks** | `GITHUB_TOKEN` only |
 
 **Firebase / Maps in most CI jobs:** **`android.yml`** and **`android-release-readiness.yml`** copy **`android/app/google-services.json.example`** and use a non-secret **`MAPS_API_KEY`** placeholder — enough for compile, tests, and mock flows, not production OAuth.
 
-**Release bundle job:** Decrypts **`outreach-secrets.json.age`** to **`${RUNNER_TEMP}/outreach-secrets.json`**, runs **`setup-secrets.sh`** on that plaintext path with **`OUTREACH_MAPS_KEY_FIELD=release_api_key`**, resolves **repo** vs **legacy** signing, materializes **`${RUNNER_TEMP}/outreach-upload.jks`**, exports Gradle **`ANDROID_UPLOAD_*`** env vars, then **`bundleRelease`**. Consolidated JSON must include **`development_api_key`** and **`release_api_key`**; **repo mode** also needs **`android_upload_signing`** when **`upload-keystore.jks.age`** is present.
+**Release bundle job:** Runs **`build-release-bundle.sh`**, which calls **`setup-secrets.sh`** the same way as local developers (default resolution, dual Maps keys), sets **`OUTREACH_EXPORT_PLAINTEXT_JSON`** so the consolidated JSON is available for signing checks, then resolves **repo** vs **legacy** signing, materializes **`${RUNNER_TEMP}/outreach-upload.jks`**, exports Gradle **`ANDROID_UPLOAD_*`** env vars, then **`bundleRelease`**. Consolidated JSON must include **`development_api_key`** and **`release_api_key`**; **repo mode** also needs **`android_upload_signing`** when **`upload-keystore.jks.age`** is present.
 
 ## Fork and pull-request caveat
 

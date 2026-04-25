@@ -16,7 +16,7 @@ Windows PowerShell uses **`.\gradlew.bat`** instead of **`./gradlew`**.
 
 ## Secrets (Firebase / Maps)
 
-The app needs **`google-services.json`** under **`android/app/`** and a **Maps** key merged into **`local.properties`** (**`MAPS_API_KEY`**). Recommended path:
+The app needs **`google-services.json`** under **`android/app/`** and Map keys in **`local.properties`** (**`MAPS_API_KEY_DEBUG` / `MAPS_API_KEY_RELEASE`**, or legacy **`MAPS_API_KEY`**). Recommended path:
 
 1. Obtain team **`secrets/outreach-secrets.json.age`** and passphrase (out of band).
 2. Install **`age`** and **`jq`**.
