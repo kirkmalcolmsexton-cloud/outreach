@@ -196,7 +196,7 @@ Use this table so later steps match how **your** machine runs shells and Gradle:
 
 **Recommended — consolidated secrets file**
 
-The app expects a real **`google-services.json`** under **`android/app/`** and a **Google Maps Platform** key (**`MAPS_API_KEY`**) merged into **`android/local.properties`** (Gradle reads both; see **`android/app/build.gradle.kts`**). Teams can distribute **one passphrase-encrypted JSON** instead of copying files by hand.
+The app expects a real **`google-services.json`** under **`android/app/`** and Map keys **`MAPS_API_KEY_DEBUG` / `MAPS_API_KEY_RELEASE`** in **`android/local.properties`** (Gradle `debug` / `release` build types; see **`android/app/build.gradle.kts`**). A single legacy **`MAPS_API_KEY`** still works for both variants when the dual properties are unset (e.g. CI). Teams can distribute **one passphrase-encrypted JSON** instead of copying files by hand.
 
 1. Install **`age`** and **`jq`** (needed by the helper scripts below):
    - **macOS:** `brew install age jq`
@@ -216,7 +216,7 @@ export OUTREACH_SECRETS_PASSPHRASE='your-shared-passphrase'
 
 You can point at a specific file with **`./scripts/setup-secrets.sh /path/to/outreach-secrets.json.age`** or **`OUTREACH_SECRETS_FILE`**.
 
-This writes **`app/google-services.json`** and merges **`MAPS_API_KEY`** into **`local.properties`** without removing **`sdk.dir`**.
+This writes **`app/google-services.json`** and **`MAPS_API_KEY_DEBUG` / `MAPS_API_KEY_RELEASE`** into **`local.properties`** without removing **`sdk.dir`**.
 
 **Maintainers — create or refresh the encrypted file**
 
@@ -253,7 +253,7 @@ If you do not use the consolidated file:
 
 1. Copy **`android/app/google-services.json.example`** to **`android/app/google-services.json`**.
 2. Replace with your real **`google-services.json`** from the Firebase console.
-3. Add **`MAPS_API_KEY=…`** to **`android/local.properties`** or **`~/.gradle/gradle.properties`** (see **`android/gradle.properties`**).  
+3. After **`setup-secrets`**, use **`MAPS_API_KEY_DEBUG` / `MAPS_API_KEY_RELEASE`** in **`local.properties`**, or a single legacy **`MAPS_API_KEY`** in **`~/.gradle/gradle.properties`** (see **`android/gradle.properties`**).  
    - Keep these files **local-only**; do not commit them.
    - **Routing / arrival times** on the map use the **Directions API** with the same key: in Google Cloud, enable **Directions API** for the project, keep **billing** on for Maps Platform, and under the key’s **API restrictions** allow **Directions API** (not only Maps SDK for Android).
 
@@ -280,7 +280,7 @@ If this succeeds, JDK + SDK + Gradle are correct.
 
 ### 6b. Terminal build with `~/etc/outreach.env` (team `.age` file)
 
-Use this when your team shares **`secrets/outreach-secrets.json.age`** and a passphrase — one script decrypts to **`secrets/outreach-secrets.json`**, runs **`android/scripts/setup-secrets.sh`** (writes **`app/google-services.json`** and **`MAPS_API_KEY`** in **`local.properties`**), then **`assembleDebug`**.
+Use this when your team shares **`secrets/outreach-secrets.json.age`** and a passphrase — one script decrypts to **`secrets/outreach-secrets.json`**, runs **`android/scripts/setup-secrets.sh`** (writes **`app/google-services.json`** and Map keys in **`local.properties`**), then **`assembleDebug`**.
 
 1. **Ask your admin** for the shared passphrase **`OUTREACH_SECRETS_PASSPHRASE`** (same value used to encrypt the **`.age`** file). Treat it like a password: do not paste it into tickets, chat logs, or the repo.
 

@@ -36,11 +36,14 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.GoogleAuthProvider
 import org.outreach.app.BuildConfig
+import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.security.MessageDigest
+import org.json.JSONObject
 
 @Composable
 fun LoginGateScreen(onSignedIn: () -> Unit) {
@@ -58,7 +61,7 @@ fun LoginGateScreen(onSignedIn: () -> Unit) {
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         when (result.resultCode) {
-            Activity.RESULT_OK -> viewModel.onGoogleSignInIntentResult(result.data)
+            Activity.RESULT_OK -> viewModel.onGoogleSignInIntentResult(context, result.data)
             Activity.RESULT_CANCELED -> viewModel.setSignInDidNotCompleteMessage(context, result.data)
             else -> viewModel.setSignInFailedMessage("Unexpected result (${result.resultCode}).")
         }
@@ -117,6 +120,18 @@ class AuthViewModel(
     /** @return null if the Web client ID is missing — calling [GoogleSignInOptions.Builder.requestIdToken] with a blank id can crash Play services. */
     fun buildGoogleSignInIntent(context: Context): Intent? {
         val webClientId = resolveWebClientId(context)
+        // #region agent log
+        agentDebugLog(
+            context, "B", "LoginGateScreen.kt:buildIntent",
+            "web_client_and_build_identity",
+            mapOf(
+                "webClientIdLen" to webClientId.length,
+                "webClientIdBlank" to webClientId.isBlank(),
+                "buildType" to BuildConfig.BUILD_TYPE,
+                "applicationId" to BuildConfig.APPLICATION_ID,
+            ),
+        )
+        // #endregion
         if (webClientId.isBlank()) {
             return null
         }
@@ -136,16 +151,37 @@ class AuthViewModel(
     fun setMissingWebClientIdError() {
         _error.value =
             "Missing OAuth Web Client ID. In Firebase: Authentication → Sign-in method → Google → copy " +
-                "the Web client ID. Paste it into res/values/strings.xml as google_web_client_id " +
-                "(replace PASTE_WEB_CLIENT_ID), or replace app/google-services.json with a downloaded file " +
+                "the Web client ID. Replace app/google-services.json with a downloaded file " +
                 "that includes oauth_client entries."
     }
 
-    fun onGoogleSignInIntentResult(data: Intent?) {
+    fun onGoogleSignInIntentResult(context: Context, data: Intent?) {
+        // #region agent log
+        val webLen = resolveWebClientId(context).length
+        agentDebugLog(
+            context, "D", "LoginGateScreen.kt:onGoogleSignInIntentResult",
+            "sign_in_intent_result_ok_path",
+            mapOf("webClientIdLen" to webLen, "buildType" to BuildConfig.BUILD_TYPE, "debug" to BuildConfig.DEBUG),
+        )
+        // #endregion
         val task = GoogleSignIn.getSignedInAccountFromIntent(data)
         task.addOnSuccessListener { account ->
             signInToFirebase(account)
         }.addOnFailureListener { e ->
+            val sha1 = resolveAppSigningSha1(context)
+            // #region agent log
+            val api = e as? ApiException
+            agentDebugLog(
+                context, "A", "LoginGateScreen.kt:onFailure",
+                "getSignedInAccountFromIntent_failed",
+                mapOf(
+                    "sha1" to sha1,
+                    "buildType" to BuildConfig.BUILD_TYPE,
+                    "apiStatusCode" to (api?.statusCode ?: -1),
+                    "apiMessage" to (e.message?.take(120) ?: ""),
+                ),
+            )
+            // #endregion
             logAuth("GoogleSignIn.getSignedInAccountFromIntent failed", e)
             _error.value = formatGoogleSignInFailure(e)
         }
@@ -160,6 +196,20 @@ class AuthViewModel(
         val developerError = googleSignInStatus.contains("DEVELOPER_ERROR", ignoreCase = true)
         val packageName = context.packageName
         val signingSha1 = resolveAppSigningSha1(context)
+        // #region agent log
+        agentDebugLog(
+            context, "C", "LoginGateScreen.kt:resultCanceled",
+            "result_canceled_sign_in",
+            mapOf(
+                "developerError" to developerError,
+                "sha1" to signingSha1,
+                "packageName" to packageName,
+                "buildType" to BuildConfig.BUILD_TYPE,
+                "extrasKeys" to extrasKeys,
+                "googleSignInStatusPreview" to googleSignInStatus.take(200),
+            ),
+        )
+        // #endregion
         val debugSuffix =
             " Debug: package=$packageName, sha1=${if (signingSha1.isBlank()) "unknown" else signingSha1}, firebaseUser=$hasFirebaseUser, googleAccount=$hasGoogleAccount, extrasKeys=${if (extrasKeys.isBlank()) "none" else extrasKeys}, status=${if (googleSignInStatus.isBlank()) "none" else googleSignInStatus}."
         _error.value = if (developerError) {
@@ -254,13 +304,6 @@ class AuthViewModel(
 
     private fun resolveWebClientId(context: Context): String {
         val pkg = context.packageName
-        val manual = context.resources.getIdentifier("google_web_client_id", "string", pkg)
-        if (manual != 0) {
-            val v = context.getString(manual).trim()
-            if (v.isNotEmpty() && v != PLACEHOLDER_WEB_CLIENT_ID) {
-                return v
-            }
-        }
         val generated = context.resources.getIdentifier("default_web_client_id", "string", pkg)
         if (generated != 0) {
             val v = context.getString(generated).trim()
@@ -291,10 +334,43 @@ class AuthViewModel(
         }.getOrDefault("")
     }
 
+    // #region agent log
+    private fun agentDebugLog(
+        context: Context,
+        hypothesisId: String,
+        location: String,
+        message: String,
+        data: Map<String, Any?>,
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val dataJson = JSONObject()
+                for ((k, v) in data) {
+                    when (v) {
+                        null -> {}
+                        is Boolean -> dataJson.put(k, v)
+                        is Int -> dataJson.put(k, v)
+                        is Long -> dataJson.put(k, v)
+                        else -> dataJson.put(k, v.toString())
+                    }
+                }
+                val line = JSONObject()
+                    .put("sessionId", "25407f")
+                    .put("runId", "pre-fix")
+                    .put("hypothesisId", hypothesisId)
+                    .put("location", location)
+                    .put("message", message)
+                    .put("data", dataJson)
+                    .put("timestamp", System.currentTimeMillis())
+                    .toString() + "\n"
+                File(context.filesDir, "debug-25407f.log").appendText(line, Charsets.UTF_8)
+                Log.w(TAG, "AGENT_NDJSON $line".trim())
+            }
+        }
+    }
+    // #endregion
+
     private companion object {
         private const val TAG = "OutreachAuth"
-
-        /** Same value as default in res/values/strings.xml — replace with your real Web client ID. */
-        private const val PLACEHOLDER_WEB_CLIENT_ID = "PASTE_WEB_CLIENT_ID"
     }
 }
