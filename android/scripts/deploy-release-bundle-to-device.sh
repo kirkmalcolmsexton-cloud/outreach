@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# Build/install a signed release bundle on a physical Android device.
+# Install a signed release bundle on a physical Android device.
+# Expects the .aab produced by build-release-bundle.sh (default path below). Run build-release-bundle.sh first.
 # Uses bundletool to generate a device-specific APK set from app-release.aab.
 #
 # Usage:
+#   bash android/scripts/build-release-bundle.sh   # produces app/build/outputs/bundle/release/app-release.aab
 #   bash android/scripts/deploy-release-bundle-to-device.sh
-#   bash android/scripts/deploy-release-bundle-to-device.sh --skip-build --serial <device-serial>
-#   bash android/scripts/deploy-release-bundle-to-device.sh --bundle /path/to/app-release.aab --skip-build
+#   bash android/scripts/deploy-release-bundle-to-device.sh --serial <device-serial>
+#   bash android/scripts/deploy-release-bundle-to-device.sh --bundle /path/to/app-release.aab
 #
 # Options:
-#   --skip-build            Use existing AAB; do not run build-release-bundle.sh
 #   --aab PATH              Path to .aab (default: android/app/build/outputs/bundle/release/app-release.aab)
-#   --bundle PATH           Alias for --aab (explicit bundle override)
+#   --bundle PATH           Alias for --aab
 #   --serial SERIAL         Target device serial (physical device only)
 #   --pick                  Auto-pick first physical device if serial not provided
 #   --bundletool-jar PATH   Use an existing bundletool jar
@@ -21,10 +22,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ANDROID_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${ANDROID_DIR}"
 
-SKIP_BUILD=0
 KEEP_APKS=0
 PICK=0
 TARGET_SERIAL="${ANDROID_SERIAL:-}"
@@ -35,18 +34,19 @@ DEFAULT_BUNDLETOOL_JAR="${HOME}/.cache/outreach/bundletool-all-${DEFAULT_BUNDLET
 
 usage() {
   cat <<'EOF'
-Build/install a signed release bundle on a physical Android device.
-Uses bundletool to generate a device-specific APK set from app-release.aab.
+Install a signed release bundle on a physical Android device.
 
-Usage:
+Build the .aab first (same output path as CI):
+  bash android/scripts/build-release-bundle.sh
+
+Then deploy (default AAB: android/app/build/outputs/bundle/release/app-release.aab):
   bash android/scripts/deploy-release-bundle-to-device.sh
-  bash android/scripts/deploy-release-bundle-to-device.sh --skip-build --serial <device-serial>
-  bash android/scripts/deploy-release-bundle-to-device.sh --bundle /path/to/app-release.aab --skip-build
+  bash android/scripts/deploy-release-bundle-to-device.sh --serial <device-serial>
+  bash android/scripts/deploy-release-bundle-to-device.sh --bundle /path/to/app-release.aab
 
 Options:
-  --skip-build            Use existing AAB; do not run build-release-bundle.sh
   --aab PATH              Path to .aab (default: android/app/build/outputs/bundle/release/app-release.aab)
-  --bundle PATH           Alias for --aab (explicit bundle override)
+  --bundle PATH           Alias for --aab
   --serial SERIAL         Target device serial (physical device only)
   --pick                  Auto-pick first physical device if serial not provided
   --bundletool-jar PATH   Use an existing bundletool jar
@@ -57,10 +57,6 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --skip-build)
-      SKIP_BUILD=1
-      shift
-      ;;
     --aab|--bundle)
       [[ $# -ge 2 ]] || { echo "error: --aab/--bundle requires a path" >&2; exit 2; }
       AAB_PATH="$2"
@@ -149,13 +145,10 @@ if [[ "${STATE}" != "device" ]]; then
   exit 1
 fi
 
-if [[ "${SKIP_BUILD}" -eq 0 ]]; then
-  bash "${SCRIPT_DIR}/build-release-bundle.sh"
-fi
-
 if [[ ! -f "${AAB_PATH}" ]]; then
   echo "deploy-release-bundle-to-device: missing AAB: ${AAB_PATH}" >&2
-  echo "Run without --skip-build or provide --aab <path>." >&2
+  echo "Run: bash android/scripts/build-release-bundle.sh" >&2
+  echo "Or pass: --aab /path/to/app-release.aab" >&2
   exit 1
 fi
 

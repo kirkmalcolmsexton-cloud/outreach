@@ -85,17 +85,35 @@ android {
             file.inputStream().use { load(it) }
         }
     }
-    // Do NOT use providers.gradleProperty("MAPS_API_KEY"): it merges android/gradle.properties and wins
-    // before we read local.properties — so a template MAPS_API_KEY there overrides setup-secrets.
-    // CLI: only explicit -P MAPS_API_KEY=… (see gradle.startParameter.projectProperties).
-    val mapsApiKeyFromCli = gradle.startParameter.projectProperties["MAPS_API_KEY"]
-    val mapsApiKey = sequenceOf(
-        mapsApiKeyFromCli,
+    // Do NOT use providers.gradleProperty for MAPS_* for the same reason as MAPS_API_KEY: gradle.properties merge order.
+    // Dual keys: setup-secrets.sh writes MAPS_API_KEY_DEBUG / MAPS_API_KEY_RELEASE. Legacy: single MAPS_API_KEY for both
+    // when the dual properties are unset (e.g. CI placeholder env).
+    fun mapsKeyFrom(
+        cliKey: String,
+        localPropertyKey: String,
+        envName: String,
+    ): String = sequenceOf(
+        gradle.startParameter.projectProperties[cliKey],
+        localProperties.getProperty(localPropertyKey),
+        System.getenv(envName),
+        rootGradleProperties.getProperty(localPropertyKey),
+        userGradleProperties.getProperty(localPropertyKey),
+    ).firstOrNull { !it.isNullOrBlank() } ?: ""
+
+    val mapsApiKeyLegacy = sequenceOf(
+        gradle.startParameter.projectProperties["MAPS_API_KEY"],
         localProperties.getProperty("MAPS_API_KEY"),
         System.getenv("MAPS_API_KEY"),
         rootGradleProperties.getProperty("MAPS_API_KEY"),
         userGradleProperties.getProperty("MAPS_API_KEY"),
     ).firstOrNull { !it.isNullOrBlank() } ?: ""
+
+    var mapsApiKeyDebug = mapsKeyFrom("MAPS_API_KEY_DEBUG", "MAPS_API_KEY_DEBUG", "MAPS_API_KEY_DEBUG")
+    var mapsApiKeyRelease = mapsKeyFrom("MAPS_API_KEY_RELEASE", "MAPS_API_KEY_RELEASE", "MAPS_API_KEY_RELEASE")
+    if (mapsApiKeyDebug.isEmpty() && mapsApiKeyRelease.isEmpty() && mapsApiKeyLegacy.isNotEmpty()) {
+        mapsApiKeyDebug = mapsApiKeyLegacy
+        mapsApiKeyRelease = mapsApiKeyLegacy
+    }
 
     val outreachVersionCode =
         rootProject.findProperty("outreach.versionCode")?.toString()?.toIntOrNull() ?: 1
@@ -116,7 +134,6 @@ android {
         versionCode = outreachVersionCode
         versionName = outreachVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        resValue("string", "google_maps_key", mapsApiKey)
 
         // Map CLI project properties into the instrumentation Bundle (AGP DSL; avoids nested
         // -Pandroid.testInstrumentationRunnerArguments.* keys and configuration-cache warnings).
@@ -148,6 +165,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            resValue("string", "google_maps_key", mapsApiKeyDebug)
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -157,6 +177,7 @@ android {
             if (releaseSigning != null) {
                 signingConfig = signingConfigs.getByName("release")
             }
+            resValue("string", "google_maps_key", mapsApiKeyRelease)
         }
     }
     compileOptions {

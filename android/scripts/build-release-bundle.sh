@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Build signed release App Bundle (.aab) for Play upload using the same flow as
-# .github/workflows/android-release-build.yml.
+# Build signed release App Bundle (.aab) for Play upload.
+# .github/workflows/android-release-build.yml runs this script (no duplicate CI logic).
 # Run from repo: bash android/scripts/build-release-bundle.sh
 # Or from android/: ./scripts/build-release-bundle.sh
 # Prerequisites:
 # - JDK 17 (JAVA_HOME)
 # - Android SDK: export ANDROID_HOME, or sdk.dir in android/local.properties, or a default SDK under $HOME
-# - age, jq, expect (same as CI decrypt/setup flow)
+# - age, jq, expect (expect: headless age decrypt in setup-secrets; same as CI)
 # - OUTREACH_SECRETS_PASSPHRASE set (used to decrypt secrets/outreach-secrets.json.age and repo keystore .age)
 # - Signing configured as either:
 #   - Repo mode: secrets/upload-keystore.jks.age + android_upload_signing in secrets JSON
@@ -59,7 +59,9 @@ if [[ -z "${OUTREACH_SECRETS_PASSPHRASE:-}" ]]; then
   exit 1
 fi
 
-bash "${SCRIPT_DIR}/decrypt-age-passphrase.sh" "${REPO_ROOT}/secrets/outreach-secrets.json.age" "${OUTREACH_JSON}"
+# Same entry as developers: setup-secrets.sh (default .age resolution, dual Maps keys). Export plaintext for jq signing below.
+export OUTREACH_EXPORT_PLAINTEXT_JSON="${OUTREACH_JSON}"
+bash "${SCRIPT_DIR}/setup-secrets.sh"
 jq empty "${OUTREACH_JSON}" >/dev/null
 
 KS_AGE="${REPO_ROOT}/secrets/upload-keystore.jks.age"
@@ -90,8 +92,6 @@ else
   echo "To initialize repo mode quickly: OUTREACH_SIGNING_REPO_MODE=1 bash android/scripts/create-upload-keystore-and-gh-secrets.sh" >&2
   exit 1
 fi
-
-OUTREACH_MAPS_KEY_FIELD=release_api_key bash "${SCRIPT_DIR}/setup-secrets.sh" "${OUTREACH_JSON}"
 
 if [[ "${SIGNING_MODE}" == "repo" ]]; then
   bash "${SCRIPT_DIR}/decrypt-age-passphrase.sh" "${KS_AGE}" "${UPLOAD_JKS}"

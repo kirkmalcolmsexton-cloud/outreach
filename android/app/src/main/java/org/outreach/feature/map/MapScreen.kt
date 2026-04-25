@@ -654,20 +654,20 @@ fun MapScreen(
         if (viewMode == "map") {
             if (!hasMapsApiMetadata) {
                 Text(
-                    "Map API key missing. Add MAPS_API_KEY to local.properties, ~/.gradle/gradle.properties, or environment variables to render map tiles.",
+                    "Map API key missing. Add MAPS_API_KEY_DEBUG / MAPS_API_KEY_RELEASE (or legacy MAPS_API_KEY) to local.properties, ~/.gradle/gradle.properties, or environment; run android/scripts/setup-secrets.sh to generate from consolidated JSON.",
                     modifier = Modifier.padding(top = 12.dp)
                 )
             }
             if (hasMapsApiMetadata && mapsKeyLooksLikeGradleTemplate) {
                 Text(
-                    "Map API key is still a template or CI placeholder. Set a real Google Maps Platform key (AIza…) in MAPS_API_KEY / development_api_key.",
+                    "Map API key is still a template or CI placeholder. Set a real Google Maps Platform key (AIza…) via setup-secrets (development_api_key / release_api_key) or legacy MAPS_API_KEY.",
                     modifier = Modifier.padding(top = 12.dp),
                     color = MaterialTheme.colorScheme.error
                 )
             }
             if (hasMapsApiMetadata && mapsKeyLooksLikeOAuthWebClient) {
                 Text(
-                    "MAPS_API_KEY looks like a Google OAuth Web client ID (*.apps.googleusercontent.com). " +
+                    "Maps API key value looks like a Google OAuth Web client ID (*.apps.googleusercontent.com). " +
                         "Maps tiles need a separate Maps Platform API key from Google Cloud → APIs & Services → Credentials—not the Firebase/Google Sign-In Web client ID.",
                     modifier = Modifier.padding(top = 12.dp),
                     color = MaterialTheme.colorScheme.error
