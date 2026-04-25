@@ -1,4 +1,4 @@
-# Runs android/scripts/build-release-bundle.sh — same setup-secrets + keystore + ./gradlew bundleRelease as local release (see android/scripts/build-release-bundle.sh).
+# Runs `android/scripts/build.sh release-bundle` (wrapper: `build-release-bundle.sh` — one implementation).
 # Signing: repo mode — secrets/upload-keystore.jks.age + android_upload_signing in decrypted JSON (same passphrase as JSON .age).
 # Legacy: ANDROID_UPLOAD_* repository secrets + base64 keystore (see docs/release-process.md).
 name: Android release bundle
@@ -53,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x android/gradlew
-          bash android/scripts/build-release-bundle.sh
+          bash android/scripts/build.sh release-bundle
 
       - name: Upload release bundle artifact
         uses: actions/upload-artifact@v4

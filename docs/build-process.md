@@ -26,8 +26,7 @@ Full narrative, **`encrypt-secrets.sh`**, manual Firebase download, and **`~/etc
 
 ## CI parity
 
-- **`./gradlew check`** approximates the **`verify`** job (wrapper validation aside, CI may substitute **`google-services.json.example`** — see workflow).
-- **`./gradlew connectedDebugAndroidTest -PoutreachAuthResolution=mock`** on an emulator mirrors the **`instrumented`** job.
+Android CI on GitHub runs **`android/scripts/build.sh` `ci` …** — same as locally from **`outreach/android`**: **`./scripts/build.sh` `ci` `verify`**, and for instrumentation **`ci` `build-instrumented-apks`** + **`ci` `connected-mock`** (see **[`ci-cd.md`](ci-cd.md)**). The **`build.sh`** `ci` subcommands replace **`app/google-services.json`** with the example and match CI **`MAPS_API_KEY`**. **Release** builds: **`./scripts/build.sh` `release-bundle`** (or **`build-release-bundle.sh`**).
 
 See **[`docs/testing-process.md`](testing-process.md)** for when to add physical-device runs. Commands and **`adb`** details: **[`docs/testing-guide.md`](testing-guide.md)**.
 

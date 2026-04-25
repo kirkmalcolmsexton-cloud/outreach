@@ -24,10 +24,10 @@ GitHub Actions jobs **`verify`** / **`instrumented`** are defined in **[`.github
 
 | Job | What it runs |
 |-----|----------------|
-| **`verify`** | Wrapper validation, placeholder **`google-services.json`**, **`./gradlew check`** |
-| **`instrumented`** | **`connectedDebugAndroidTest`** with **`-PoutreachAuthResolution=mock`** on an API **34** emulator (after **`verify`**) |
+| **`verify`** | **`./scripts/build.sh` `ci` `verify`** (placeholder **`google-services`**, **`./gradlew check`**) |
+| **`instrumented`** | **`build.sh` `ci` `build-instrumented-apks`**, then API **34** emulator, then **`build.sh` `ci` `connected-mock`** (same `build.sh` as release/debug) |
 
-Locally, **`./gradlew check`** approximates **`verify`** (minus CI file substitution). **`connectedDebugAndroidTest -PoutreachAuthResolution=mock`** on an emulator matches the **`instrumented`** job.
+Locally, run the **same** commands as the workflow: **`./scripts/build.sh` `ci` `verify`**, then (with an emulator) **`./scripts/build.sh` `ci` `build-instrumented-apks`** and **`./scripts/build.sh` `ci` `connected-mock`** — see **[`ci-cd.md`](ci-cd.md)**.
 
 ---
 

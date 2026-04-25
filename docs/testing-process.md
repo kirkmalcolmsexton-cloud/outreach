@@ -12,10 +12,10 @@ How we validate Outreach changes **before merge and release**: which test layers
 
 | Layer | Purpose |
 |-------|---------|
-| **`./gradlew check`** | Host-side: compile, JVM unit tests, lint — mirrors much of CI **`verify`** ([`.github/workflows/android.yml`](../.github/workflows/android.yml)). |
-| **`connectedDebugAndroidTest`** | Instrumentation on an emulator or device — CI **`instrumented`** uses **`mock`** auth on an API **34** emulator. |
+| **`./scripts/build.sh` `ci` `verify`** | Same as CI **`verify`**: `google-services` from example, then **`./gradlew check`**. |
+| **`./scripts/build.sh` `ci` `build-instrumented-apks`** then **`ci` `connected-mock`** | Same as CI **`instrumented`** (API **34** in Actions; use a matching local AVD for strict parity). |
 
-Prefer running **`check`** plus **`connectedDebugAndroidTest`** with **`-PoutreachAuthResolution=mock`** locally before pushing when your change touches behavior covered by **`androidTest`**.
+Prefer those script subcommands (or the equivalent Gradle with the same `google-services` and env) before pushing when your change touches behavior covered by **`androidTest`**. Ad-hoc **`./gradlew check`** is fine for quick checks if you are not depending on CI-identical config.
 
 ## Auth: `mock` vs `real`
 
