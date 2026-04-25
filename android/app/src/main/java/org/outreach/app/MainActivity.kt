@@ -218,7 +218,7 @@ private fun OutreachRoot(uiAutomationConfig: UiAutomationConfig = UiAutomationCo
         households.mapNotNull { parseIsoDateOrNull(it.lastVisited) }
     }
     val earliestVisitationDate = remember(visitationDates) {
-        visitationDates.minOrNull() ?: LocalDate.now()
+        visitationDates.minOrNull() ?: LocalDate.ofEpochDay(0)
     }
     val resolvedDateRange = remember(
         savedConfig.mapQuickRange,

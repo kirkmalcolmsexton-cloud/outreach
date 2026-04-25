@@ -1,6 +1,7 @@
 import java.io.File
 import java.util.Properties
 import org.gradle.api.Project
+import org.gradle.api.invocation.Gradle
 
 plugins {
     id("com.android.application")
@@ -48,6 +49,23 @@ private fun resolveReleaseSigning(androidRoot: Project): ReleaseSigningMaterial?
 
 private val releaseSigning = resolveReleaseSigning(project.rootProject)
 
+/** True when the CLI requested `bundleRelease` (configuration-cache compatible; avoids `doFirst` on that task). */
+private fun Gradle.startParameterRequestsBundleRelease(): Boolean =
+    startParameter.taskNames.any { name ->
+        name.endsWith("bundleRelease", ignoreCase = true)
+    }
+
+if (gradle.startParameterRequestsBundleRelease() && releaseSigning == null) {
+    error(
+        """
+        Release signing is not configured.
+        CI: set ANDROID_UPLOAD_* repository secrets and decode keystore to ANDROID_UPLOAD_KEYSTORE_PATH before Gradle runs.
+        Local: copy android/keystore.properties.example to android/keystore.properties.
+        First-time secrets: bash android/scripts/create-upload-keystore-and-gh-secrets.sh
+        """.trimIndent(),
+    )
+}
+
 android {
     val localProperties = Properties().apply {
         val file = rootProject.file("local.properties")
@@ -67,17 +85,35 @@ android {
             file.inputStream().use { load(it) }
         }
     }
-    // Do NOT use providers.gradleProperty("MAPS_API_KEY"): it merges android/gradle.properties and wins
-    // before we read local.properties — so a template MAPS_API_KEY there overrides setup-secrets.
-    // CLI: only explicit -P MAPS_API_KEY=… (see gradle.startParameter.projectProperties).
-    val mapsApiKeyFromCli = gradle.startParameter.projectProperties["MAPS_API_KEY"]
-    val mapsApiKey = sequenceOf(
-        mapsApiKeyFromCli,
+    // Do NOT use providers.gradleProperty for MAPS_* for the same reason as MAPS_API_KEY: gradle.properties merge order.
+    // Dual keys: setup-secrets.sh writes MAPS_API_KEY_DEBUG / MAPS_API_KEY_RELEASE. Legacy: single MAPS_API_KEY for both
+    // when the dual properties are unset (e.g. CI placeholder env).
+    fun mapsKeyFrom(
+        cliKey: String,
+        localPropertyKey: String,
+        envName: String,
+    ): String = sequenceOf(
+        gradle.startParameter.projectProperties[cliKey],
+        localProperties.getProperty(localPropertyKey),
+        System.getenv(envName),
+        rootGradleProperties.getProperty(localPropertyKey),
+        userGradleProperties.getProperty(localPropertyKey),
+    ).firstOrNull { !it.isNullOrBlank() } ?: ""
+
+    val mapsApiKeyLegacy = sequenceOf(
+        gradle.startParameter.projectProperties["MAPS_API_KEY"],
         localProperties.getProperty("MAPS_API_KEY"),
         System.getenv("MAPS_API_KEY"),
         rootGradleProperties.getProperty("MAPS_API_KEY"),
         userGradleProperties.getProperty("MAPS_API_KEY"),
     ).firstOrNull { !it.isNullOrBlank() } ?: ""
+
+    var mapsApiKeyDebug = mapsKeyFrom("MAPS_API_KEY_DEBUG", "MAPS_API_KEY_DEBUG", "MAPS_API_KEY_DEBUG")
+    var mapsApiKeyRelease = mapsKeyFrom("MAPS_API_KEY_RELEASE", "MAPS_API_KEY_RELEASE", "MAPS_API_KEY_RELEASE")
+    if (mapsApiKeyDebug.isEmpty() && mapsApiKeyRelease.isEmpty() && mapsApiKeyLegacy.isNotEmpty()) {
+        mapsApiKeyDebug = mapsApiKeyLegacy
+        mapsApiKeyRelease = mapsApiKeyLegacy
+    }
 
     val outreachVersionCode =
         rootProject.findProperty("outreach.versionCode")?.toString()?.toIntOrNull() ?: 1
@@ -85,17 +121,19 @@ android {
         rootProject.findProperty("outreach.versionName")?.toString()?.trim().orEmpty()
             .ifEmpty { "0.1.0" }
 
+    val outreachCompileSdk = 35
+    val outreachTargetSdk = 35
+
     namespace = "org.outreach.app"
-    compileSdk = 34
+    compileSdk = outreachCompileSdk
 
     defaultConfig {
         applicationId = "org.outreach.app"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = outreachTargetSdk
         versionCode = outreachVersionCode
         versionName = outreachVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        resValue("string", "google_maps_key", mapsApiKey)
 
         // Map CLI project properties into the instrumentation Bundle (AGP DSL; avoids nested
         // -Pandroid.testInstrumentationRunnerArguments.* keys and configuration-cache warnings).
@@ -127,6 +165,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            resValue("string", "google_maps_key", mapsApiKeyDebug)
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -136,6 +177,7 @@ android {
             if (releaseSigning != null) {
                 signingConfig = signingConfigs.getByName("release")
             }
+            resValue("string", "google_maps_key", mapsApiKeyRelease)
         }
     }
     compileOptions {
@@ -151,21 +193,6 @@ android {
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.15"
-    }
-}
-
-afterEvaluate {
-    tasks.named("bundleRelease").configure {
-        doFirst {
-            require(releaseSigning != null) {
-                """
-                Release signing is not configured.
-                CI: set ANDROID_UPLOAD_* repository secrets and decode keystore to ANDROID_UPLOAD_KEYSTORE_PATH before Gradle runs.
-                Local: copy android/keystore.properties.example to android/keystore.properties.
-                First-time secrets: bash android/scripts/create-upload-keystore-and-gh-secrets.sh
-                """.trimIndent()
-            }
-        }
     }
 }
 

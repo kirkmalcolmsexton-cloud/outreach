@@ -12,7 +12,6 @@ local.properties
 
 # Consolidated plaintext secrets (see secrets/outreach-secrets.example.json)
 secrets/outreach-secrets.json
-android/gradle.properties
 
 # Android release signing (copy from keystore.properties.example; do not commit)
 android/keystore.properties

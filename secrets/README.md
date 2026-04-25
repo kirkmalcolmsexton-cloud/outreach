@@ -37,7 +37,7 @@ Schema for consolidated JSON (including optional **`android_upload_signing`**): 
 
 1. Obtain **`outreach-secrets.json.age`** (and passphrase) out of band from your team.
 2. Decrypt or place plaintext **`secrets/outreach-secrets.json`** if you maintain it locally (never push plaintext).
-3. Run **`bash android/scripts/setup-secrets.sh`** — it writes **`android/app/google-services.json`** and merges **`MAPS_API_KEY`** into **`android/local.properties`**.  
+3. Run **`bash android/scripts/setup-secrets.sh`** — it writes **`android/app/google-services.json`** and **`MAPS_API_KEY_DEBUG` / `MAPS_API_KEY_RELEASE`** into **`android/local.properties`** (Gradle picks by build type; see **`android/app/build.gradle.kts`**).  
    Terminal automation with **`~/etc/outreach.env`**: **[`docs/developer-onboarding.md`](../docs/developer-onboarding.md)** (§6b).
 
 ### CI (release bundle)
@@ -45,7 +45,7 @@ Schema for consolidated JSON (including optional **`android_upload_signing`**): 
 **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** on **`release/**`** / **`hotfix/**`** or **`workflow_dispatch`**:
 
 1. Reads **`OUTREACH_SECRETS_PASSPHRASE`** from GitHub.
-2. Decrypts **`secrets/outreach-secrets.json.age`** → runner temp JSON → **`setup-secrets.sh`** (release Maps key).
+2. Runs **`build-release-bundle.sh`**: **`setup-secrets.sh`** (same as local) + export path for signing **`jq`**, then keystore and **`bundleRelease`**.
 3. Resolves **repo mode** vs **legacy** signing (see **`docs/github-actions-secrets.md`**): decrypt **`upload-keystore.jks.age`** or use **`ANDROID_UPLOAD_*`** secrets + base64 keystore.
 4. Runs Gradle **`bundleRelease`** with **`ANDROID_UPLOAD_*`** environment variables.
 
@@ -91,7 +91,7 @@ Commit **`secrets/upload-keystore.jks.age`**. Ensure **`android_upload_signing`*
 
 | Script | Purpose |
 |--------|---------|
-| **`android/scripts/setup-secrets.sh`** | Materialize **`google-services.json`** + **`MAPS_API_KEY`** from plaintext or **`.age`**. |
+| **`android/scripts/setup-secrets.sh`** | Materialize **`google-services.json`** + **`MAPS_API_KEY_DEBUG` / `MAPS_API_KEY_RELEASE`** from plaintext or **`.age`**. |
 | **`android/scripts/encrypt-secrets.sh`** | Produce **`outreach-secrets.json.age`** from plaintext JSON. |
 | **`android/scripts/decrypt-age-passphrase.sh`** | Headless **`age -d`** (used by **`setup-secrets.sh`** and CI). |
 | **`android/scripts/encrypt-upload-keystore-age.sh`** | Encrypt upload keystore → **`secrets/upload-keystore.jks.age`**. |
