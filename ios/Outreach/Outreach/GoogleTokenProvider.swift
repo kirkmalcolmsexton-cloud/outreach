@@ -19,7 +19,7 @@ final class GoogleTokenProvider: GoogleAccessTokenProvider, @unchecked Sendable 
                 !(user.grantedScopes?.contains(scope) ?? false)
             }
             if !missing.isEmpty {
-                guard let root = UIApplication.outreachKeyWindow?.rootViewController else { return nil }
+                guard let root = UIApplication.outreachKeyWindow?.rootViewController?.outreachTopPresented else { return nil }
                 _ = try await user.addScopes(missing, presenting: root)
             }
             try await user.refreshTokensIfNeeded()
@@ -76,5 +76,21 @@ extension UIApplication {
             .compactMap { $0 as? UIWindowScene }
             .flatMap { $0.windows }
             .first { $0.isKeyWindow }
+    }
+}
+
+extension UIViewController {
+    /// Top-most controller for modal presentation (SwiftUI hosting hierarchy safe).
+    var outreachTopPresented: UIViewController {
+        if let presented = presentedViewController {
+            return presented.outreachTopPresented
+        }
+        if let nav = self as? UINavigationController, let visible = nav.visibleViewController {
+            return visible.outreachTopPresented
+        }
+        if let tab = self as? UITabBarController, let selected = tab.selectedViewController {
+            return selected.outreachTopPresented
+        }
+        return self
     }
 }

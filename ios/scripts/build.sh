@@ -20,8 +20,22 @@
 #   OUTREACH_XCODEBUILD_RUN_FIRST_LAUNCH=1 — run xcodebuild -runFirstLaunch before build (one-time; fixes DVT/IDESimulator issues)
 #   OUTREACH_SKIP_SPM_RESOLVE=1 — skip -resolvePackageDependencies (not recommended; CLI needs this for Firebase/GoogleSignIn SPM)
 #   OUTREACH_SKIP_IOS_SETUP_SECRETS=1 — do not run ios/scripts/setup-secrets.sh before build/test/archive
+#   OUTREACH_DEVELOPMENT_TEAM (or DEVELOPMENT_TEAM) — Apple team id (10 characters) for CLI signing; required for
+#                                xcodebuild to a physical device or archive when pbxproj DEVELOPMENT_TEAM is empty.
+#   ~/etc/outreach.env — if this file exists, it is sourced (set -a) so you can set OUTREACH_DEVELOPMENT_TEAM, etc.
+#                        (same path as in docs/developer-onboarding.md and android/scripts).
+#   OUTREACH_XCODE_ALLOW_PROVISIONING_UPDATES — default 1: pass -allowProvisioningUpdates so Automatic signing can
+#                                create iOS Development profiles from the Apple Developer API. Set to 0 for CI that
+#                                uses fixed provisioning only.
 
 set -euo pipefail
+
+if [[ -f "${HOME}/etc/outreach.env" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "${HOME}/etc/outreach.env"
+  set +a
+fi
 
 # First available iPhone simulator UDID (empty if none). Needs an installed iOS Simulator runtime.
 outreach_first_iphone_simulator_udid() {
@@ -63,6 +77,18 @@ if [[ -n "${OUTREACH_XCODE:-}" ]]; then
   export DEVELOPER_DIR="${OUTREACH_XCODE}/Contents/Developer"
 fi
 
+# pbxproj uses empty DEVELOPMENT_TEAM; Xcode UI sets it per machine. Command-line device builds need it explicitly.
+OUTREACH_DEV_TEAM="${OUTREACH_DEVELOPMENT_TEAM:-${DEVELOPMENT_TEAM:-}}"
+XCODE_EXTRA_BUILD_SETTINGS=()
+if [[ -n "${OUTREACH_DEV_TEAM}" ]]; then
+  XCODE_EXTRA_BUILD_SETTINGS=( "DEVELOPMENT_TEAM=${OUTREACH_DEV_TEAM}" )
+fi
+
+XCODE_PROVISIONING_FLAGS=()
+if [[ "${OUTREACH_XCODE_ALLOW_PROVISIONING_UPDATES:-1}" != "0" ]]; then
+  XCODE_PROVISIONING_FLAGS=(-allowProvisioningUpdates)
+fi
+
 usage() {
   cat >&2 <<EOF
 Usage: $(basename "$0") [build|clean|test|archive]
@@ -86,6 +112,12 @@ Usage: $(basename "$0") [build|clean|test|archive]
 
   If secrets/outreach-secrets.json or .json.age exists, build/test/archive runs ios/scripts/setup-secrets.sh first
   to write GoogleService-Info.plist when the JSON includes plist fields. Skip: OUTREACH_SKIP_IOS_SETUP_SECRETS=1
+
+  Physical device or archive from the CLI: set OUTREACH_DEVELOPMENT_TEAM=XXXXXXXXXX (or DEVELOPMENT_TEAM) when the
+  project’s Development Team is unset — same as Xcode Signing & Capabilities (or add it to ~/etc/outreach.env).
+
+  By default, -allowProvisioningUpdates is passed so devices without a preinstalled dev profile can build (turn off
+  with OUTREACH_XCODE_ALLOW_PROVISIONING_UPDATES=0, e.g. some CI with fixed profiles).
 EOF
 }
 
@@ -197,18 +229,24 @@ xcodebuild_failed() {
   echo "  • Override destination: OUTREACH_DESTINATION='platform=iOS Simulator,id=<udid>'  (xcrun simctl list devices)" >&2
   echo "  • 'Missing package product' (FirebaseCore, etc.): ensure network; script runs -resolvePackageDependencies first." >&2
   echo "    Or: open Xcode → File → Packages → Resolve. OUTREACH_SKIP_SPM_RESOLVE=1 skips resolve (usually wrong)." >&2
+  echo "  • 'requires a development team' / Signing: set Apple team id, e.g.  OUTREACH_DEVELOPMENT_TEAM=XXXXXXXXXX" >&2
+  echo "    (Membership page or Xcode → target → Signing). Same as signing team you use for Run on device in Xcode." >&2
+  echo "  • 'No profiles for … were found' / Automatic signing disabled: ensure team is set; build.sh passes" >&2
+  echo "    -allowProvisioningUpdates by default so Xcode can create dev profiles. Disable with OUTREACH_XCODE_ALLOW_PROVISIONING_UPDATES=0 if you must not contact Apple (CI with fixed profiles)." >&2
 }
 
 case "${ACTION}" in
   build)
     if ! xcodebuild \
+      "${XCODE_PROVISIONING_FLAGS[@]}" \
       -project "Outreach.xcodeproj" \
       -scheme "${SCHEME}" \
       -configuration Debug \
       -destination "${DEST}" \
       -derivedDataPath "${DD}" \
       -quiet \
-      build
+      build \
+      "${XCODE_EXTRA_BUILD_SETTINGS[@]}"
     then
       xcodebuild_failed
       exit 1
@@ -217,12 +255,14 @@ case "${ACTION}" in
     ;;
   clean)
     if ! xcodebuild \
+      "${XCODE_PROVISIONING_FLAGS[@]}" \
       -project "Outreach.xcodeproj" \
       -scheme "${SCHEME}" \
       -configuration Debug \
       -destination "${DEST}" \
       -derivedDataPath "${DD}" \
-      clean
+      clean \
+      "${XCODE_EXTRA_BUILD_SETTINGS[@]}"
     then
       xcodebuild_failed
       exit 1
@@ -231,13 +271,15 @@ case "${ACTION}" in
     ;;
   test)
     if ! xcodebuild \
+      "${XCODE_PROVISIONING_FLAGS[@]}" \
       -project "Outreach.xcodeproj" \
       -scheme "${SCHEME}" \
       -configuration Debug \
       -destination "${DEST}" \
       -derivedDataPath "${DD}" \
       -quiet \
-      test
+      test \
+      "${XCODE_EXTRA_BUILD_SETTINGS[@]}"
     then
       xcodebuild_failed
       exit 1
@@ -248,13 +290,15 @@ case "${ACTION}" in
     OUT_ARCHIVE="${OUTREACH_ARCHIVE_DIR:-${IOS_DIR}/build}"
     mkdir -p "${OUT_ARCHIVE}"
     if ! xcodebuild \
+      "${XCODE_PROVISIONING_FLAGS[@]}" \
       -project "Outreach.xcodeproj" \
       -scheme "${SCHEME}" \
       -configuration Release \
       -destination "${DEST}" \
       -derivedDataPath "${DD}" \
       -archivePath "${OUT_ARCHIVE}/Outreach.xcarchive" \
-      archive
+      archive \
+      "${XCODE_EXTRA_BUILD_SETTINGS[@]}"
     then
       xcodebuild_failed
       exit 1

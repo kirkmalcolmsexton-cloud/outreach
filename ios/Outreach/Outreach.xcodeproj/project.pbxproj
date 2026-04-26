@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -84,8 +84,26 @@
 		GRP00001 /* Outreach */ = {
 			isa = PBXGroup;
 			children = (
-				F0010001, F0010002, F0010003, F0010004, F0010005, F0010006, F0010007, F0010008, F0010009, F001000A, F001000B, F001000C, F001000D, F001000E, F001000F, F0010010, F0010011, F0010012,
-				F0010013, F0010014,
+				F0010001 /* OutreachApp.swift */,
+				F0010002 /* AppDelegate.swift */,
+				F0010003 /* Models.swift */,
+				F0010004 /* Parsing.swift */,
+				F0010005 /* MapFilterUtils.swift */,
+				F0010006 /* MapDateResolution.swift */,
+				F0010007 /* SwiftDataModels.swift */,
+				F0010008 /* AppConfigStore.swift */,
+				F0010009 /* GeocodingService.swift */,
+				F001000A /* GoogleSheetsAPI.swift */,
+				F001000B /* GoogleTokenProvider.swift */,
+				F001000C /* OutreachRepository.swift */,
+				F001000D /* ServiceLocator.swift */,
+				F001000E /* RootView.swift */,
+				F001000F /* LoginGateView.swift */,
+				F0010010 /* MapTabView.swift */,
+				F0010011 /* VisitsTabView.swift */,
+				F0010012 /* SettingsTabView.swift */,
+				F0010013 /* Info.plist */,
+				F0010014 /* Assets.xcassets */,
 			);
 			path = Outreach;
 			sourceTree = "<group>";
@@ -109,6 +127,7 @@
 				FRW00001 /* Frameworks */,
 				RES00001 /* Resources */,
 				SHELL0001 /* Copy GoogleService-Info if present */,
+				SHELL0002 /* Patch Info.plist OAuth from GoogleService-Info */,
 			);
 			buildRules = (
 			);
@@ -189,6 +208,26 @@
 			shellPath = /bin/sh;
 			shellScript = "# Gitignored plist from setup-secrets.sh or manual add; must land in the app bundle.\nPLIST_SRC=\"${SRCROOT}/Outreach/GoogleService-Info.plist\"\nAPP_DIR=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\nif [ -f \"$PLIST_SRC\" ]; then\n  mkdir -p \"$APP_DIR\"\n  cp -f \"$PLIST_SRC\" \"$APP_DIR/GoogleService-Info.plist\"\nfi\n";
 		};
+		SHELL0002 /* Patch Info.plist OAuth from GoogleService-Info */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(WRAPPER_NAME)/Info.plist",
+			);
+			name = "Patch Info.plist OAuth from GoogleService-Info";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "SERVICE_PLIST=\"${SRCROOT}/Outreach/GoogleService-Info.plist\"\nAPP_INFO=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}/Info.plist\"\nPATCH_SCRIPT=\"${SRCROOT}/../scripts/patch-app-info-google-oauth.py\"\nif [ ! -f \"$APP_INFO\" ]; then\n  echo \"patch-app-info-google-oauth: skip (no app Info.plist yet): $APP_INFO\" >&2\n  exit 0\nfi\nif [ ! -f \"$SERVICE_PLIST\" ]; then\n  exit 0\nfi\nif [ ! -f \"$PATCH_SCRIPT\" ]; then\n  echo \"patch-app-info-google-oauth: missing $PATCH_SCRIPT\" >&2\n  exit 1\nfi\nexec python3 \"$PATCH_SCRIPT\" \"$SERVICE_PLIST\" \"$APP_INFO\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -196,7 +235,24 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B0010001, B0010002, B0010003, B0010004, B0010005, B0010006, B0010007, B0010008, B0010009, B001000A, B001000B, B001000C, B001000D, B001000E, B001000F, B0010010, B0010011, B0010012,
+				B0010001 /* OutreachApp.swift in Sources */,
+				B0010002 /* AppDelegate.swift in Sources */,
+				B0010003 /* Models.swift in Sources */,
+				B0010004 /* Parsing.swift in Sources */,
+				B0010005 /* MapFilterUtils.swift in Sources */,
+				B0010006 /* MapDateResolution.swift in Sources */,
+				B0010007 /* SwiftDataModels.swift in Sources */,
+				B0010008 /* AppConfigStore.swift in Sources */,
+				B0010009 /* GeocodingService.swift in Sources */,
+				B001000A /* GoogleSheetsAPI.swift in Sources */,
+				B001000B /* GoogleTokenProvider.swift in Sources */,
+				B001000C /* OutreachRepository.swift in Sources */,
+				B001000D /* ServiceLocator.swift in Sources */,
+				B001000E /* RootView.swift in Sources */,
+				B001000F /* LoginGateView.swift in Sources */,
+				B0010010 /* MapTabView.swift in Sources */,
+				B0010011 /* VisitsTabView.swift in Sources */,
+				B0010012 /* SettingsTabView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -250,6 +306,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZGDB9UJHM3;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -275,6 +332,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZGDB9UJHM3;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;

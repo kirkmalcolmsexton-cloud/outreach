@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import FirebaseCore
+import GoogleSignIn
 
 @main
 struct OutreachApp: App {
@@ -22,6 +23,9 @@ struct OutreachApp: App {
             RootView()
                 .modelContainer(sharedModelContainer)
                 .environmentObject(appConfig)
+                .onOpenURL { url in
+                    _ = GIDSignIn.sharedInstance.handle(url)
+                }
         }
     }
 }

@@ -35,7 +35,7 @@ struct LoginGateView: View {
         isSigningIn = true
         defer { isSigningIn = false }
         do {
-            guard let root = UIApplication.outreachKeyWindow?.rootViewController else {
+            guard let root = UIApplication.outreachKeyWindow?.rootViewController?.outreachTopPresented else {
                 errorMessage = "No window — cannot present sign-in."
                 return
             }
@@ -54,6 +54,3 @@ struct LoginGateView: View {
         }
     }
 }
-
-import FirebaseCore
-

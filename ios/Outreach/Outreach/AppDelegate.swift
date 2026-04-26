@@ -3,6 +3,21 @@ import FirebaseCore
 import GoogleSignIn
 import BackgroundTasks
 
+// Align with Firebase docs: use Firebase's OAuth client ID; optional WEB_CLIENT_ID → serverClientID (Firebase Auth id token).
+private func outreachConfigureGoogleSignInFromServicePlist(path: String) {
+    guard let plist = NSDictionary(contentsOfFile: path) as? [String: Any] else { return }
+    let fromPlist = plist["CLIENT_ID"] as? String
+    let firebaseClientId = FirebaseApp.app()?.options.clientID
+    let clientId = [firebaseClientId, fromPlist].compactMap { $0 }.first { !$0.isEmpty }
+    guard let clientId else { return }
+    let webId = (plist["WEB_CLIENT_ID"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    if let webId {
+        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientId, serverClientID: webId)
+    } else {
+        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientId)
+    }
+}
+
 enum BGTaskId {
     static let refresh = "com.outreach.app.refresh"
 }
@@ -14,6 +29,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         if let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"), FileManager.default.fileExists(atPath: path) {
             FirebaseApp.configure()
+            outreachConfigureGoogleSignInFromServicePlist(path: path)
         } else {
             // Developers must add GoogleService-Info.plist from Firebase; auth stays disabled until then.
         }
@@ -22,7 +38,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        GIDSignIn.sharedInstance.handle(url)
+        return GIDSignIn.sharedInstance.handle(url)
     }
 
     private func registerBackgroundSync() {
