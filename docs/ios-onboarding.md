@@ -37,6 +37,11 @@ Create an **iOS** OAuth client (bundle ID, App Store ID if applicable) in the sa
 - **Build:** `Cmd+B`.
 - **Run:** `Cmd+R`.
 - **Secrets (CLI):** From the repo root, after the same consolidated secrets as Android exist, run **`bash ios/scripts/setup-secrets.sh`** to write **`ios/Outreach/Outreach/GoogleService-Info.plist`** when **`google_service_info_plist_base64`** or **`google_service_info_plist`** is set in **`secrets/outreach-secrets.json`** (or decrypts from **`secrets/outreach-secrets.json.age`**). See **[`secrets/README.md`](../secrets/README.md)**.
+- **Simulator (CLI):** Apple provides the **iOS Simulator** (not an “emulator”). From the repo root:
+  - **`bash ios/scripts/simulator.sh start`** — creates the default **Outreach iPhone 16** simulator if needed (latest installed iOS runtime + iPhone 16/15/14 device type), opens **Simulator.app**, and boots it. Override the name with **`OUTREACH_IOS_SIM_NAME`**.
+  - **`export OUTREACH_DESTINATION="$(bash ios/scripts/resolve-outreach-ios-simulator-destination.sh)"`** then **`bash ios/scripts/build.sh build`** — same concrete destination idea as Android’s **`ANDROID_SERIAL`** helper.
+  - See **`bash ios/scripts/simulator.sh --help`** for **`list`**, **`shutdown all`**, **`wait`**, etc.
+  - **Install + launch on Simulator:** **`bash ios/scripts/deploy-simulator.sh`** — builds Debug, installs **`Outreach.app`**, opens the app (same idea as **Run** in Xcode). Uses **`simulator.sh start`** unless **`OUTREACH_DEPLOY_SKIP_BOOT=1`**.
 - **Build (CLI):**  
   `bash ios/scripts/build.sh`  
   Subcommands: **`build`** (default), **`clean`**, **`test`**, **`archive`**. Requires full **Xcode** (not Command Line Tools only). See **`ios/scripts/build.sh -h`**.  

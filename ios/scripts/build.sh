@@ -19,6 +19,7 @@
 #   OUTREACH_DESTINATION — full override for xcodebuild -destination (skips auto sim pick).
 #   OUTREACH_XCODEBUILD_RUN_FIRST_LAUNCH=1 — run xcodebuild -runFirstLaunch before build (one-time; fixes DVT/IDESimulator issues)
 #   OUTREACH_SKIP_SPM_RESOLVE=1 — skip -resolvePackageDependencies (not recommended; CLI needs this for Firebase/GoogleSignIn SPM)
+#   OUTREACH_SKIP_IOS_SETUP_SECRETS=1 — do not run ios/scripts/setup-secrets.sh before build/test/archive
 
 set -euo pipefail
 
@@ -82,6 +83,9 @@ Usage: $(basename "$0") [build|clean|test|archive]
 
   Swift packages (Firebase, Google Sign-In) are resolved via  xcodebuild -resolvePackageDependencies  before build
   (same as File → Packages → Resolve in Xcode). Needs network on first run.
+
+  If secrets/outreach-secrets.json or .json.age exists, build/test/archive runs ios/scripts/setup-secrets.sh first
+  to write GoogleService-Info.plist when the JSON includes plist fields. Skip: OUTREACH_SKIP_IOS_SETUP_SECRETS=1
 EOF
 }
 
@@ -98,6 +102,30 @@ command -v xcodebuild >/dev/null 2>&1 || {
   echo "build-ios: missing ${PROJ}" >&2
   exit 1
 }
+
+# When consolidated secrets exist under secrets/, materialize GoogleService-Info.plist (same as a manual
+# setup-secrets.sh). Skips if no secrets file — clones without secrets still build. Skips for `clean`.
+outreach_maybe_setup_ios_secrets() {
+  [[ "${OUTREACH_SKIP_IOS_SETUP_SECRETS:-}" == "1" ]] && return 0
+  case "${ACTION}" in
+    build|test|archive) ;;
+    *) return 0 ;;
+  esac
+  local repo_root
+  repo_root="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+  local age_f="${repo_root}/secrets/outreach-secrets.json.age"
+  local json_f="${repo_root}/secrets/outreach-secrets.json"
+  if [[ ! -f "${age_f}" && ! -f "${json_f}" ]]; then
+    return 0
+  fi
+  echo "build-ios: ios/scripts/setup-secrets.sh (GoogleService-Info.plist)…" >&2
+  if ! bash "${SCRIPT_DIR}/setup-secrets.sh"; then
+    echo "build-ios: setup-secrets.sh failed (passphrase, jq, age?). Fix secrets or set OUTREACH_SKIP_IOS_SETUP_SECRETS=1 and add plist manually." >&2
+    exit 1
+  fi
+}
+
+outreach_maybe_setup_ios_secrets
 
 cd "${IOS_DIR}/Outreach"
 mkdir -p "${DD}"

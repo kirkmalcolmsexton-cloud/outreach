@@ -108,6 +108,7 @@
 				SRC00001 /* Sources */,
 				FRW00001 /* Frameworks */,
 				RES00001 /* Resources */,
+				SHELL0001 /* Copy GoogleService-Info if present */,
 			);
 			buildRules = (
 			);
@@ -167,6 +168,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		SHELL0001 /* Copy GoogleService-Info if present */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy GoogleService-Info if present";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Gitignored plist from setup-secrets.sh or manual add; must land in the app bundle.\nPLIST_SRC=\"${SRCROOT}/Outreach/GoogleService-Info.plist\"\nAPP_DIR=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\nif [ -f \"$PLIST_SRC\" ]; then\n  mkdir -p \"$APP_DIR\"\n  cp -f \"$PLIST_SRC\" \"$APP_DIR/GoogleService-Info.plist\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		SRC00001 /* Sources */ = {
@@ -228,6 +251,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Outreach/Info.plist;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -252,6 +276,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Outreach/Info.plist;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
