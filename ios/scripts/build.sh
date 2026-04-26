@@ -77,8 +77,14 @@ if [[ -n "${OUTREACH_XCODE:-}" ]]; then
   export DEVELOPER_DIR="${OUTREACH_XCODE}/Contents/Developer"
 fi
 
-# pbxproj uses empty DEVELOPMENT_TEAM; Xcode UI sets it per machine. Command-line device builds need it explicitly.
-OUTREACH_DEV_TEAM="${OUTREACH_DEVELOPMENT_TEAM:-${DEVELOPMENT_TEAM:-}}"
+# pbxproj uses empty DEVELOPMENT_TEAM; Xcode UI or env sets team. Do not use ${A:-$B}: an empty-but-set
+# OUTREACH_DEVELOPMENT_TEAM= in ~/etc/outreach.env would block fallthrough to DEVELOPMENT_TEAM.
+OUTREACH_DEV_TEAM=""
+if [[ -n "${OUTREACH_DEVELOPMENT_TEAM:-}" ]]; then
+  OUTREACH_DEV_TEAM="${OUTREACH_DEVELOPMENT_TEAM}"
+elif [[ -n "${DEVELOPMENT_TEAM:-}" ]]; then
+  OUTREACH_DEV_TEAM="${DEVELOPMENT_TEAM}"
+fi
 XCODE_EXTRA_BUILD_SETTINGS=()
 if [[ -n "${OUTREACH_DEV_TEAM}" ]]; then
   XCODE_EXTRA_BUILD_SETTINGS=( "DEVELOPMENT_TEAM=${OUTREACH_DEV_TEAM}" )
@@ -233,6 +239,9 @@ xcodebuild_failed() {
   echo "    (Membership page or Xcode → target → Signing). Same as signing team you use for Run on device in Xcode." >&2
   echo "  • 'No profiles for … were found' / Automatic signing disabled: ensure team is set; build.sh passes" >&2
   echo "    -allowProvisioningUpdates by default so Xcode can create dev profiles. Disable with OUTREACH_XCODE_ALLOW_PROVISIONING_UPDATES=0 if you must not contact Apple (CI with fixed profiles)." >&2
+  echo "  • 'No Account for Team …': CLI xcodebuild needs the same Apple ID as in Xcode → Settings → Accounts." >&2
+  echo "    Set OUTREACH_DEVELOPMENT_TEAM to your 10-char Team ID (Membership). Remove empty OUTREACH_DEVELOPMENT_TEAM= lines in ~/etc/outreach.env." >&2
+  echo "    If the GUI works but Terminal does not, run the script from Terminal.app or sign out/in under Accounts." >&2
 }
 
 case "${ACTION}" in

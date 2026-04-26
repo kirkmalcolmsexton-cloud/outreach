@@ -10,7 +10,8 @@
 #
 # Prerequisites: Full Xcode; iPhone connected and trusted; Developer Mode on device; signing
 # team/provisioning the same as when you Run from Xcode to that device. On first sideload, trust
-# the developer on the device: Settings → General → VPN & Device Management → Trust.
+# the developer on the device: Settings → General → VPN & Device Management → Trust. Unlock the
+# phone for devicectl to launch the app automatically; otherwise open Outreach from the home screen.
 #
 # Environment (inherits build.sh where noted):
 #   OUTREACH_XCODE, OUTREACH_DERIVED_DATA, OUTREACH_XCODEBUILD_RUN_FIRST_LAUNCH,
@@ -60,6 +61,9 @@ Usage: $(basename "$0") [options]
   dev certificate — on the device: Settings → General → VPN & Device Management (or "Device
   Management") → your Developer App certificate → Trust. Then launch the app again or re-run
   this script.
+
+  Remote launch requires the iPhone to be **unlocked** (Face ID / passcode). If the device is
+  locked, install may still succeed — unlock and run the script again or open the app on the home screen.
 
   Picking a device (first match wins):
   1) --udid <id>   (hardware / DVT id from Xcode, e.g. 00008140-… — not always the same as devicectl’s "Identifier" column)
@@ -260,6 +264,11 @@ echo "deploy-device: installing ${APP_NAME}.app on ${TARGET_UDID} …" >&2
 xcrun devicectl device install app --device "${TARGET_UDID}" "${APP}"
 
 echo "deploy-device: launching ${BUNDLE_ID} …" >&2
-xcrun devicectl device process launch --device "${TARGET_UDID}" "${BUNDLE_ID}"
-
+launch_out="$(xcrun devicectl device process launch --device "${TARGET_UDID}" "${BUNDLE_ID}" 2>&1)" || {
+  echo "${launch_out}" >&2
+  if echo "${launch_out}" | grep -qiE 'unlocked|Locked'; then
+    echo "deploy-device: the device was locked; unlock the iPhone, then re-run or tap Outreach on the home screen (install may have already succeeded)." >&2
+  fi
+  exit 1
+}
 echo "deploy-device: OK"
