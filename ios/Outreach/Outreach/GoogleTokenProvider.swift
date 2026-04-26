@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import GoogleSignIn
 import FirebaseAuth
+import FirebaseCore
 
 /// OAuth scopes aligned with Android `outreachGoogleSheetsScopes` in `MainActivity.kt`.
 let outreachGoogleSheetsScopeStrings: [String] = [
@@ -31,6 +32,13 @@ final class GoogleTokenProvider: GoogleAccessTokenProvider, @unchecked Sendable 
 
 enum GoogleSignInCoordinator {
     static func signInWithGoogle(presenting root: UIViewController) async throws {
+        guard FirebaseApp.app() != nil else {
+            throw NSError(
+                domain: "OutreachAuth",
+                code: -2,
+                userInfo: [NSLocalizedDescriptionKey: "Add GoogleService-Info.plist to the app target and rebuild."]
+            )
+        }
         let result = try await GIDSignIn.sharedInstance.signIn(
             withPresenting: root,
             hint: nil,
@@ -47,11 +55,14 @@ enum GoogleSignInCoordinator {
 
     static func signOut() {
         GIDSignIn.sharedInstance.signOut()
-        try? Auth.auth().signOut()
+        if FirebaseApp.app() != nil {
+            try? Auth.auth().signOut()
+        }
     }
 
     static var isFullySignedInForSheets: Bool {
-        guard Auth.auth().currentUser != nil,
+        guard FirebaseApp.app() != nil,
+              Auth.auth().currentUser != nil,
               let u = GIDSignIn.sharedInstance.currentUser
         else { return false }
         return outreachGoogleSheetsScopeStrings.allSatisfy { u.grantedScopes?.contains($0) ?? false }
