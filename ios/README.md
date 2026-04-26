@@ -12,6 +12,9 @@ Native **Swift / SwiftUI** app matching the Android product: Google sign-in, Goo
 | Script | Purpose |
 |--------|---------|
 | [scripts/setup-secrets.sh](scripts/setup-secrets.sh) | Writes **gitignored** `Outreach/Outreach/GoogleService-Info.plist` from the team **`outreach-secrets.json`** (or **`.age`**) when **`google_service_info_plist_base64`** or **`google_service_info_plist`** is set. Same file discovery as [android/scripts/setup-secrets.sh](../android/scripts/setup-secrets.sh). |
+| [scripts/simulator.sh](scripts/simulator.sh) | **iOS Simulator** (not an emulator): **`create`**, **`start`** (create + boot), **`boot`**, **`shutdown`**, **`destination`** (for **`OUTREACH_DESTINATION`**), **`list`**. Default device name **`Outreach iPhone 16`** (override **`OUTREACH_IOS_SIM_NAME`**). See **`simulator.sh --help`**. |
+| [scripts/resolve-outreach-ios-simulator-destination.sh](scripts/resolve-outreach-ios-simulator-destination.sh) | Prints **`platform=iOS Simulator,id=…`** for the default Outreach sim — same idea as **`android/scripts/resolve-outreach-emulator-serial.sh`**. |
+| [scripts/deploy-simulator.sh](scripts/deploy-simulator.sh) | **Simulator deploy:** boots the default Outreach sim (**`simulator.sh start`**), runs **`build.sh build`**, **`simctl install`**, **`simctl launch`** (`org.outreach.ios`). **`OUTREACH_DEPLOY_SKIP_BOOT=1`** if the device is already booted. See **`deploy-simulator.sh --help`**. |
 | [scripts/build.sh](scripts/build.sh) | **`xcodebuild`**: `build`, `clean`, `test`, `archive`. Auto-picks first **iPhone** from **`simctl list devices available`** (concrete simulator `id`) when **`OUTREACH_DESTINATION`** is unset. **`OUTREACH_XCODEBUILD_RUN_FIRST_LAUNCH=1`** for DVT issues. See **`build.sh -h`**. |
 
 **Swift packages:** **`ios/scripts/build.sh`** runs **`xcodebuild -resolvePackageDependencies`** before building (Firebase, Google Sign-In). In Xcode you can use **File → Packages → Resolve** instead.

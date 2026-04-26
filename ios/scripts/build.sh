@@ -76,6 +76,7 @@ Usage: $(basename "$0") [build|clean|test|archive]
   Project: ${PROJ}
   Scheme:  ${SCHEME}
 
+  Simulator helper: ios/scripts/simulator.sh (create, start, destination for OUTREACH_DESTINATION).
   If no simulators appear: Xcode → Settings → Platforms → install the **iOS … Simulator** runtime for your Xcode.
   If you see: DVTPlugInLoading / DVTDownloads / "Abort trap: 6": xcodebuild -runFirstLaunch (or OUTREACH_XCODEBUILD_RUN_FIRST_LAUNCH=1).
 
