@@ -24,7 +24,8 @@ Schema for consolidated JSON (including optional **`android_upload_signing`**): 
 | Kind | Typical source |
 |------|----------------|
 | **`development_api_key`** / **`release_api_key`** | Google Cloud / Maps Platform — API keys restricted by package + signing cert per environment. |
-| **`google_services`** | Firebase — download **`google-services.json`** or mirror its structure into the consolidated JSON (see example). |
+| **`google_services`** | Firebase — download **`google-services.json`** (Android) or mirror its structure into the consolidated JSON (see example). |
+| **`google_service_info_plist`** / **`google_service_info_plist_base64`** (optional) | iOS—**`ios/scripts/setup-secrets.sh`** writes **`ios/Outreach/Outreach/GoogleService-Info.plist`** (gitignored). Prefer **base64** in JSON: `base64 -i GoogleService-Info.plist \| tr -d '\n'`. Or download the plist by hand; see [`docs/ios-onboarding.md`](../docs/ios-onboarding.md). |
 | **`android_upload_signing`** (repo mode) | Values must match your **upload keystore**: alias and passwords from when the **`.jks`** was created (**[`android/scripts/create-upload-keystore-and-gh-secrets.sh`](../android/scripts/create-upload-keystore-and-gh-secrets.sh)** or Android Studio / **`keytool`**). |
 | Upload keystore bytes (repo mode) | Generated locally; only the **`.age`** ciphertext is committed. Encrypt with **`android/scripts/encrypt-upload-keystore-age.sh`** (defaults: read **`~/.config/outreach/upload-keystore.jks`**, write **`secrets/upload-keystore.jks.age`**). |
 | **`OUTREACH_SECRETS_PASSPHRASE`** (GitHub Actions) | Chosen by the team — one passphrase decrypts **`outreach-secrets.json.age`** and **`upload-keystore.jks.age`** when using the same passphrase for both encryptions. Stored only as a **repository secret**, never in git. |
@@ -38,6 +39,7 @@ Schema for consolidated JSON (including optional **`android_upload_signing`**): 
 1. Obtain **`outreach-secrets.json.age`** (and passphrase) out of band from your team.
 2. Decrypt or place plaintext **`secrets/outreach-secrets.json`** if you maintain it locally (never push plaintext).
 3. Run **`bash android/scripts/setup-secrets.sh`** — it writes **`android/app/google-services.json`** and **`MAPS_API_KEY_DEBUG` / `MAPS_API_KEY_RELEASE`** into **`android/local.properties`** (Gradle picks by build type; see **`android/app/build.gradle.kts`**).  
+4. (iOS) Run **`bash ios/scripts/setup-secrets.sh`** when your consolidated JSON includes **`google_service_info_plist_base64`** or **`google_service_info_plist`** — it writes **`ios/Outreach/Outreach/GoogleService-Info.plist`**. The same **`.age`** or **`outreach-secrets.json`** file is used (same search order as Android’s script).  
    Terminal automation with **`~/etc/outreach.env`**: **[`docs/developer-onboarding.md`](../docs/developer-onboarding.md)** (§6b).
 
 ### CI (release bundle)
@@ -58,7 +60,7 @@ Fork PRs do **not** receive repository secrets — release signing jobs are not 
 ### 1. Edit consolidated JSON (plaintext)
 
 1. Copy **`outreach-secrets.example.json`** → **`secrets/outreach-secrets.json`** if you are bootstrapping (or edit your existing plaintext file).
-2. Fill real Maps keys, **`google_services`**, and optionally **`android_upload_signing`** per schema.
+2. Fill real Maps keys, **`google_services`**, optional **iOS plist** keys (**`google_service_info_plist_base64`** or **`google_service_info_plist`**), and optionally **`android_upload_signing`** per schema.
 
 ### 2. Encrypt and commit **`outreach-secrets.json.age`**
 
@@ -92,6 +94,8 @@ Commit **`secrets/upload-keystore.jks.age`**. Ensure **`android_upload_signing`*
 | Script | Purpose |
 |--------|---------|
 | **`android/scripts/setup-secrets.sh`** | Materialize **`google-services.json`** + **`MAPS_API_KEY_DEBUG` / `MAPS_API_KEY_RELEASE`** from plaintext or **`.age`**. |
+| **`ios/scripts/setup-secrets.sh`** | Materialize **`ios/Outreach/Outreach/GoogleService-Info.plist`** from the same consolidated JSON (optional iOS fields). |
+| **`ios/scripts/build.sh`** | Command-line **xcodebuild** (build, clean, test, archive) for the iOS app. |
 | **`android/scripts/encrypt-secrets.sh`** | Produce **`outreach-secrets.json.age`** from plaintext JSON. |
 | **`android/scripts/decrypt-age-passphrase.sh`** | Headless **`age -d`** (used by **`setup-secrets.sh`** and CI). |
 | **`android/scripts/encrypt-upload-keystore-age.sh`** | Encrypt upload keystore → **`secrets/upload-keystore.jks.age`**. |

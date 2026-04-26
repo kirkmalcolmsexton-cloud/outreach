@@ -4,11 +4,11 @@
 
 **Jira:** [kirkmalcolmsexton.atlassian.net](https://kirkmalcolmsexton.atlassian.net) (issues and sprints; **`SCRUM-*`** keys in branch names refer to this site.)
 
-Outreach is an **Android** app for teams that work from a **Google Sheet** of households: sign in with Google, pick the spreadsheet and zip-code tabs in settings, then use a **map or list** home screen to plan routes and log visits. Data **syncs from Sheets into local storage** for offline use; visit changes are **queued and flushed** when the network is back. A **Firestore** layer adds collaboration scaffolding (presence and activity) without replacing the sheet as the source of truth.
+Outreach is an **Android** and **iOS** app for teams that work from a **Google Sheet** of households: sign in with Google, pick the spreadsheet and zip-code tabs in settings, then use a **map or list** home screen to plan routes and log visits. Data **syncs from Sheets into local storage** for offline use; visit changes are **queued and flushed** when the network is back. A **Firestore** layer adds collaboration scaffolding (presence and activity) without replacing the sheet as the source of truth.
 
-Stack highlights: **Kotlin**, **Jetpack Compose**, **Room + DataStore + WorkManager**, Google Sign-In with Sheets/Drive scopes.
+Stack highlights: **Android** — Kotlin, Jetpack Compose, Room + DataStore + WorkManager, Google Sign-In with Sheets/Drive scopes. **iOS** — Swift, SwiftUI, SwiftData, MapKit, BackgroundTasks, same Sheets and collaboration model; see **`docs/ios-architecture.md`**.
 
-The Android app lives in **`android/`** as a **single-module** project (root Gradle + **`app/`** only). See **`docs/android-architecture.md`** for layout and data flow.
+The Android app lives in **`android/`** as a **single-module** project (root Gradle + **`app/`** only). The iOS app lives in **`ios/`** (Xcode project under **`ios/Outreach/`**). See **`docs/android-architecture.md`** and **`docs/ios-architecture.md`** for layout and data flow.
 
 ---
 
@@ -69,7 +69,10 @@ Read in order of **policy → commands → code → scenarios**: **[`testing-pro
 
 ### Product and engineering reference
 
-- **[`android-architecture.md`](docs/android-architecture.md)** — app layout and data flow
+- **[`android-architecture.md`](docs/android-architecture.md)** — Android app layout and data flow
+- **[`ios-architecture.md`](docs/ios-architecture.md)** — iOS app layout and stack
+- **[`ios-onboarding.md`](docs/ios-onboarding.md)** — Xcode, Swift packages, Firebase plist
+- **[`ios-app-store.md`](docs/ios-app-store.md)** — TestFlight and App Store notes
 - **[`sync-and-collab.md`](docs/sync-and-collab.md)** — Sheets sync and collaboration
 - **[`outreach-secrets.schema.json`](docs/outreach-secrets.schema.json)** — JSON schema for **`secrets/outreach-secrets.example.json`**
 - **[`google-oauth-checklist.md`](docs/google-oauth-checklist.md)** — sign-in / OAuth / fingerprint troubleshooting (complements **`testing-guide`** § OAuth for *test accounts*)

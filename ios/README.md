@@ -1,0 +1,17 @@
+# Outreach iOS
+
+Native **Swift / SwiftUI** app matching the Android product: Google sign-in, Google Sheets import, MapKit home (map and list), visit logging with offline queue, settings for spreadsheet and tabs, Firestore presence/activity (optional), and background refresh to flush pending work.
+
+- **Xcode project:** [Outreach/Outreach.xcodeproj](Outreach/Outreach.xcodeproj) — open in Xcode 15+ on macOS.
+- **Docs:** [docs/ios-architecture.md](../docs/ios-architecture.md), [docs/ios-onboarding.md](../docs/ios-onboarding.md), [docs/ios-app-store.md](../docs/ios-app-store.md) (TestFlight and App Store).
+- **Config:** add **`Outreach/Outreach/GoogleService-Info.plist`** from Firebase, or use **`ios/scripts/setup-secrets.sh`** with consolidated secrets (gitignored; see [GoogleService-Info.plist.example](GoogleService-Info.plist.example) and [secrets/README.md](../secrets/README.md)).
+- **OAuth:** [docs/google-oauth-checklist.md](../docs/google-oauth-checklist.md) (section 7, iOS client + URL scheme).
+
+**Scripts (like `android/scripts/`):**
+
+| Script | Purpose |
+|--------|---------|
+| [scripts/setup-secrets.sh](scripts/setup-secrets.sh) | Writes **gitignored** `Outreach/Outreach/GoogleService-Info.plist` from the team **`outreach-secrets.json`** (or **`.age`**) when **`google_service_info_plist_base64`** or **`google_service_info_plist`** is set. Same file discovery as [android/scripts/setup-secrets.sh](../android/scripts/setup-secrets.sh). |
+| [scripts/build.sh](scripts/build.sh) | **`xcodebuild`**: `build`, `clean`, `test`, `archive`. Auto-picks first **iPhone** from **`simctl list devices available`** (concrete simulator `id`) when **`OUTREACH_DESTINATION`** is unset. **`OUTREACH_XCODEBUILD_RUN_FIRST_LAUNCH=1`** for DVT issues. See **`build.sh -h`**. |
+
+**Swift packages:** **`ios/scripts/build.sh`** runs **`xcodebuild -resolvePackageDependencies`** before building (Firebase, Google Sign-In). In Xcode you can use **File → Packages → Resolve** instead.

@@ -24,6 +24,10 @@ The app needs **`google-services.json`** under **`android/app/`** and Map keys i
 
 Full narrative, **`encrypt-secrets.sh`**, manual Firebase download, and **`~/etc/outreach.env`** one-shot builds live in **[`docs/developer-onboarding.md`](developer-onboarding.md)**. Repository secret names for Actions are in **[`docs/github-actions-secrets.md`](github-actions-secrets.md)**.
 
+### iOS (GoogleService-Info.plist)
+
+From the repo root, after the same **`secrets/outreach-secrets.json`** (or **`.age`**) contains **`google_service_info_plist_base64`** or **`google_service_info_plist`**, run **`bash ios/scripts/setup-secrets.sh`**. It writes **gitignored** **`ios/Outreach/Outreach/GoogleService-Info.plist`**. Command-line builds: **`bash ios/scripts/build.sh`** (see **`ios/scripts/build.sh -h`**). Details: **[`docs/ios-onboarding.md`](ios-onboarding.md)**.
+
 ## CI parity
 
 Android CI on GitHub runs **`android/scripts/build.sh` `ci` …** — same as locally from **`outreach/android`**: **`./scripts/build.sh` `ci` `verify`**, and for instrumentation **`ci` `build-instrumented-apks`** + **`ci` `connected-mock`** (see **[`ci-cd.md`](ci-cd.md)**). The **`build.sh`** `ci` subcommands replace **`app/google-services.json`** with the example and match CI **`MAPS_API_KEY`**. **Release** builds: **`./scripts/build.sh` `release-bundle`** (or **`build-release-bundle.sh`**).

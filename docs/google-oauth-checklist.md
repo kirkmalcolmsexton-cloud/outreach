@@ -1,4 +1,4 @@
-# Google OAuth checklist (Outreach Android)
+# Google OAuth checklist (Outreach Android + iOS)
 
 Use this when debugging **403 access_denied**, verification blocks, or Firebase sign-in after Google returns.
 
@@ -40,3 +40,13 @@ Use this when debugging **403 access_denied**, verification blocks, or Firebase 
 
 - On failure, the app surfaces **Firebase** error codes/messages when credential sign-in fails.
 - Filter Logcat by tag **`OutreachAuth`** (debug builds) for Google and Firebase auth details.
+
+## 7. iOS (brief)
+
+- In **Google Cloud → APIs & Services → Credentials**, add an **iOS** OAuth client with the same bundle ID as the Xcode target (for example `org.outreach.ios`)—**not** the Android package name, and no SHA-1.
+- In [Firebase](https://console.firebase.google.com/) → **Project settings** → **Your apps**, add an **iOS** app, download **`GoogleService-Info.plist`**, and place it in the iOS app target. Do not commit a production file; see [`ios/GoogleService-Info.plist.example`](../ios/GoogleService-Info.plist.example).
+- **URL scheme:** the Google Sign-In SDK requires the **REVERSED_CLIENT_ID** from `GoogleService-Info` as a **URL Type** in the app (or `CFBundleURLSchemes` in the effective `Info.plist`). A placeholder entry ships in the iOS project; replace it with your project’s `com.googleusercontent.apps.…` value.
+- Request the same **Sheets** and **Drive** scopes as Android (`spreadsheets`, `drive.file`, `drive.metadata.readonly`) so Sheets REST calls succeed with the same consent screen.
+- If sign-in works but Sheets returns **401**, the user may need to re-consent: sign out, sign in again, and accept the additional scopes. Use **Test users** on the consent screen when the app is in Testing mode.
+
+See also **[`ios-onboarding.md`](ios-onboarding.md)**.

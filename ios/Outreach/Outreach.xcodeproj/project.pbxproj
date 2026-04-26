@@ -1,0 +1,344 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		B0010001 /* OutreachApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010001 /* OutreachApp.swift */; };
+		B0010002 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010002 /* AppDelegate.swift */; };
+		B0010003 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010003 /* Models.swift */; };
+		B0010004 /* Parsing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010004 /* Parsing.swift */; };
+		B0010005 /* MapFilterUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010005 /* MapFilterUtils.swift */; };
+		B0010006 /* MapDateResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010006 /* MapDateResolution.swift */; };
+		B0010007 /* SwiftDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010007 /* SwiftDataModels.swift */; };
+		B0010008 /* AppConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010008 /* AppConfigStore.swift */; };
+		B0010009 /* GeocodingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010009 /* GeocodingService.swift */; };
+		B001000A /* GoogleSheetsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001000A /* GoogleSheetsAPI.swift */; };
+		B001000B /* GoogleTokenProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001000B /* GoogleTokenProvider.swift */; };
+		B001000C /* OutreachRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001000C /* OutreachRepository.swift */; };
+		B001000D /* ServiceLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001000D /* ServiceLocator.swift */; };
+		B001000E /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001000E /* RootView.swift */; };
+		B001000F /* LoginGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F001000F /* LoginGateView.swift */; };
+		B0010010 /* MapTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010010 /* MapTabView.swift */; };
+		B0010011 /* VisitsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010011 /* VisitsTabView.swift */; };
+		B0010012 /* SettingsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010012 /* SettingsTabView.swift */; };
+		B0010014 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F0010014 /* Assets.xcassets */; };
+		B00100F1 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = PRD0001 /* FirebaseCore */; };
+		B00100F2 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = PRD0002 /* FirebaseAuth */; };
+		B00100F3 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = PRD0003 /* FirebaseFirestore */; };
+		B00100F4 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = PRD0004 /* GoogleSignIn */; };
+		B00100F5 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = PRD0005 /* GoogleSignInSwift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		APP00001 /* Outreach.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Outreach.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F0010001 /* OutreachApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutreachApp.swift; sourceTree = "<group>"; };
+		F0010002 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		F0010003 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		F0010004 /* Parsing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Parsing.swift; sourceTree = "<group>"; };
+		F0010005 /* MapFilterUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapFilterUtils.swift; sourceTree = "<group>"; };
+		F0010006 /* MapDateResolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapDateResolution.swift; sourceTree = "<group>"; };
+		F0010007 /* SwiftDataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftDataModels.swift; sourceTree = "<group>"; };
+		F0010008 /* AppConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfigStore.swift; sourceTree = "<group>"; };
+		F0010009 /* GeocodingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeocodingService.swift; sourceTree = "<group>"; };
+		F001000A /* GoogleSheetsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSheetsAPI.swift; sourceTree = "<group>"; };
+		F001000B /* GoogleTokenProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleTokenProvider.swift; sourceTree = "<group>"; };
+		F001000C /* OutreachRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutreachRepository.swift; sourceTree = "<group>"; };
+		F001000D /* ServiceLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceLocator.swift; sourceTree = "<group>"; };
+		F001000E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		F001000F /* LoginGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginGateView.swift; sourceTree = "<group>"; };
+		F0010010 /* MapTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapTabView.swift; sourceTree = "<group>"; };
+		F0010011 /* VisitsTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitsTabView.swift; sourceTree = "<group>"; };
+		F0010012 /* SettingsTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTabView.swift; sourceTree = "<group>"; };
+		F0010013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F0010014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		FRW00001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00100F1 /* FirebaseCore in Frameworks */,
+				B00100F2 /* FirebaseAuth in Frameworks */,
+				B00100F3 /* FirebaseFirestore in Frameworks */,
+				B00100F4 /* GoogleSignIn in Frameworks */,
+				B00100F5 /* GoogleSignInSwift in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		GRP00000 = {
+			isa = PBXGroup;
+			children = (
+				GRP00001 /* Outreach */,
+				GRP00099 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		GRP00001 /* Outreach */ = {
+			isa = PBXGroup;
+			children = (
+				F0010001, F0010002, F0010003, F0010004, F0010005, F0010006, F0010007, F0010008, F0010009, F001000A, F001000B, F001000C, F001000D, F001000E, F001000F, F0010010, F0010011, F0010012,
+				F0010013, F0010014,
+			);
+			path = Outreach;
+			sourceTree = "<group>";
+		};
+		GRP00099 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				APP00001 /* Outreach.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		TGT00001 /* Outreach */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CFG0003 /* Build configuration list for PBXNativeTarget "Outreach" */;
+			buildPhases = (
+				SRC00001 /* Sources */,
+				FRW00001 /* Frameworks */,
+				RES00001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Outreach;
+			packageProductDependencies = (
+				PRD0001 /* FirebaseCore */,
+				PRD0002 /* FirebaseAuth */,
+				PRD0003 /* FirebaseFirestore */,
+				PRD0004 /* GoogleSignIn */,
+				PRD0005 /* GoogleSignInSwift */,
+			);
+			productName = Outreach;
+			productReference = APP00001 /* Outreach.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		PRJ00001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+			};
+			buildConfigurationList = CFG0001 /* Build configuration list for PBXProject "Outreach" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = GRP00000;
+			packageReferences = (
+				PKG0001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				PKG0002 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
+			productRefGroup = GRP00099 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				TGT00001 /* Outreach */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		RES00001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B0010014 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		SRC00001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B0010001, B0010002, B0010003, B0010004, B0010005, B0010006, B0010007, B0010008, B0010009, B001000A, B001000B, B001000C, B001000D, B001000E, B001000F, B0010010, B0010011, B0010012,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		BCF0001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		BCF0002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		BCF0003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Outreach/Info.plist;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.outreach.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		BCF0004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Outreach/Info.plist;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.outreach.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		CFG0001 /* Build configuration list for PBXProject "Outreach" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BCF0001 /* Debug */,
+				BCF0002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CFG0003 /* Build configuration list for PBXNativeTarget "Outreach" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BCF0003 /* Debug */,
+				BCF0004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		PKG0001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.3.0;
+			};
+		};
+		PKG0002 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		PRD0001 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = PKG0001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		PRD0002 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = PKG0001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		PRD0003 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = PKG0001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		PRD0004 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = PKG0002 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		PRD0005 /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = PKG0002 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = PRJ00001 /* Project object */;
+}
