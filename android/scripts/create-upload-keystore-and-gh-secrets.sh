@@ -155,7 +155,7 @@ if [[ "${REPO_MODE}" == "1" ]]; then
     echo "::error::jq required for repo mode instructions. brew install jq / apt install jq" >&2
     exit 1
   }
-  OUTREACH_UPLOAD_KEYSTORE_PATH="${KEYSTORE_PATH}" bash "${SCRIPT_DIR}/encrypt-upload-keystore-age.sh"
+  OUTREACH_UPLOAD_KEYSTORE_PATH="${KEYSTORE_PATH}" bash "${OUTREACH_ROOT}/android/scripts/encrypt-upload-keystore-age.sh"
 
   SNIPPET="$(jq -n \
     --arg alias "${KEY_ALIAS}" \
@@ -165,7 +165,7 @@ if [[ "${REPO_MODE}" == "1" ]]; then
 
   printf '\nMerge this into plaintext secrets/outreach-secrets.json (or jq merge), then regenerate secrets/outreach-secrets.json.age:\n\n%s\n\n' "${SNIPPET}"
   cat <<'EOF'
-Run: bash android/scripts/encrypt-secrets.sh
+Run: bash scripts/encrypt-secrets.sh
 Commit: secrets/outreach-secrets.json.age and secrets/upload-keystore.jks.age (never commit plaintext *.jks or outreach-secrets.json).
 
 CI uses repo signing when upload-keystore.jks.age exists and android_upload_signing is valid (docs/release-process.md).

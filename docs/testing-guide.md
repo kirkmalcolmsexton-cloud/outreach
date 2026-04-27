@@ -119,17 +119,17 @@ On a **physical device**, **`127.0.0.1:7747`** is the phone, not your PC.
 | Situation | What to do |
 |-----------|------------|
 | **Android Emulator** | App uses **`10.0.2.2:7747`** to reach the host. **Do not** use **`adb reverse`** for this. |
-| **Physical device (USB)** | Host listens on **`127.0.0.1:7747`**; from **repo root** run **`./scripts/adb-reverse-debug-ingest.sh`** so device localhost **7747** forwards to the machine. |
+| **Physical device (USB)** | Host listens on **`127.0.0.1:7747`**; from **repo root** run **`./android/scripts/adb-reverse-debug-ingest.sh`** (or **`./scripts/adb-reverse-debug-ingest.sh`**, forwarder) so device localhost **7747** forwards to the machine. |
 | **Stale adb / reconnect** | Run the script again after **`adb kill-server`**, unplugging, or if forwarding stops. |
 
 With multiple devices:
 
 ```bash
 export ANDROID_SERIAL="$(./scripts/get-device-serial.sh --pick)"
-./scripts/adb-reverse-debug-ingest.sh
+./android/scripts/adb-reverse-debug-ingest.sh
 ```
 
-(Run from **`outreach/`** repo root; script lives in **`scripts/`**, not **`android/scripts`**.)
+(Run from **`outreach/`** repo root; canonical script is **`android/scripts/adb-reverse-debug-ingest.sh`**; **`scripts/adb-reverse-debug-ingest.sh`** forwards.)
 
 ---
 
@@ -192,7 +192,7 @@ export PATH="$ANDROID_HOME/platform-tools:$PATH"
 
 ## Scripts used for testing
 
-Most commands assume **`cd outreach/android`**. **`build-with-secrets-from-env.sh`** runs from **repo root**.
+Most commands assume **`cd outreach/android`**. **`android/scripts/build-with-secrets-from-env.sh`** runs from **repo root** (**`scripts/build-with-secrets-from-env.sh`** forwards).
 
 | Script | Purpose |
 |--------|---------|
@@ -202,7 +202,7 @@ Most commands assume **`cd outreach/android`**. **`build-with-secrets-from-env.s
 | **`./scripts/run-emulator-tests.sh`** | Boot emulator if needed; **`build`** + **`connectedDebugAndroidTest`** (**`mock`**) |
 | **`./scripts/get-device-serial.sh`** | Table **`adb devices`**; **`--pick`**, **`--physical`** — **`--help`** |
 | **`./scripts/run-physical-ui-tests.sh`** | Interactive physical device: serial, **`mock`/`real`**, optional **`adb reverse :7747`**, then connected tests |
-| **`../scripts/adb-reverse-debug-ingest.sh`** | **`adb reverse tcp:7747 tcp:7747`** (run from repo root) |
+| **`./scripts/adb-reverse-debug-ingest.sh`** | **`adb reverse tcp:7747 tcp:7747`** (**`android/scripts/`**; from repo root **`android/scripts/adb-reverse-debug-ingest.sh`** or **`scripts/`** forwarder) |
 | **`./scripts/adb_restart.sh`** | **`adb kill-server`** / **`start-server`** |
 
 Secrets for Firebase/Maps before tests: **`./scripts/setup-secrets.sh`** — see **[`docs/developer-onboarding.md`](developer-onboarding.md#5-firebase-config-required-for-google-sign-in--firebase)**.

@@ -5,5 +5,5 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-exec "${REPO_ROOT}/scripts/adb-reverse-debug-ingest.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "${SCRIPT_DIR}/adb-reverse-debug-ingest.sh"

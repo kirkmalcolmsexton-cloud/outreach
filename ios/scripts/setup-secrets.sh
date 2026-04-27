@@ -16,7 +16,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IOS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OUTREACH_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-ANDROID_SCRIPT_DIR="${OUTREACH_ROOT}/android/scripts"
+REPO_SCRIPTS="${OUTREACH_ROOT}/scripts"
 PLIST_OUT="${IOS_DIR}/Outreach/Outreach/GoogleService-Info.plist"
 
 usage() {
@@ -87,7 +87,7 @@ decrypt_age_to_tmp() {
   local age_file="$1"
   local tmp
   tmp="$(mktemp -t outreach-secrets.XXXXXX.json)"
-  bash "${ANDROID_SCRIPT_DIR}/decrypt-age-passphrase.sh" "${age_file}" "${tmp}"
+  bash "${REPO_SCRIPTS}/decrypt-age-passphrase.sh" "${age_file}" "${tmp}"
   echo "${tmp}"
 }
 

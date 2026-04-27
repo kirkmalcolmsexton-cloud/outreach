@@ -103,7 +103,7 @@ cmd_release_bundle() (
   fi
 
   if [[ "${SIGNING_MODE}" == "repo" ]]; then
-    bash "${SCRIPT_DIR}/decrypt-age-passphrase.sh" "${KS_AGE}" "${UPLOAD_JKS}"
+    bash "${REPO_ROOT}/scripts/decrypt-age-passphrase.sh" "${KS_AGE}" "${UPLOAD_JKS}"
     if ! [[ -s "${UPLOAD_JKS}" ]]; then
       echo "build: (release-bundle) decrypted keystore missing/empty at ${UPLOAD_JKS}" >&2
       exit 1

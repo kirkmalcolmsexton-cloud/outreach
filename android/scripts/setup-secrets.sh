@@ -113,7 +113,7 @@ trap cleanup EXIT
 decrypt_age_to_tmp() {
   local age_file="$1"
   TMPJSON="$(mktemp -t outreach-secrets.XXXXXX.json)"
-  bash "${SCRIPT_DIR}/decrypt-age-passphrase.sh" "${age_file}" "${TMPJSON}"
+  bash "${OUTREACH_ROOT}/scripts/decrypt-age-passphrase.sh" "${age_file}" "${TMPJSON}"
 }
 
 JSON_PATH=""

@@ -289,7 +289,7 @@ maybe_prompt_reverse() {
   read -r -p "Run adb reverse for debug ingest (device localhost:7747 → host :7747)? [y/N] " r || true
   r="$(echo "$r" | tr '[:upper:]' '[:lower:]' | tr -d '\r')"
   if [[ "$r" == "y" || "$r" == "yes" ]]; then
-    local rev="${REPO_ROOT}/scripts/adb-reverse-debug-ingest.sh"
+    local rev="${REPO_ROOT}/android/scripts/adb-reverse-debug-ingest.sh"
     if [[ ! -x "$rev" ]]; then
       chmod +x "$rev" 2>/dev/null || true
     fi

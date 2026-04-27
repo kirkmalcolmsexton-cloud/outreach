@@ -1,7 +1,9 @@
 # Core Android CI: JVM tests, lint, debug compile (verify) + emulator instrumentation.
 # verify and instrumented run in parallel to shorten wall-clock time. Tradeoff: if verify would
 # fail (compile/unit tests), instrumented may still spend time building APKs + emulator (~30+ min).
-# Build steps: `android/scripts/build.sh` (same as `cd android && ./scripts/build.sh …` locally).
+# Entry: `${GITHUB_WORKSPACE}/android/scripts/build.sh` (`ci verify` | `ci build-instrumented-apks` | `ci connected-mock`) —
+# same as locally from `android/` via `./scripts/build.sh …`. Top-level `scripts/` (encrypt-secrets, decrypt-age-passphrase,
+# …) are not invoked by these CI targets; release bundle uses them via `android/scripts/build.sh release-bundle`.
 # android/gradle.properties is committed (version + Gradle flags); CI uses it from checkout.
 name: Android CI
 
@@ -11,10 +13,12 @@ on:
       - "**"
     paths:
       - "android/**"
+      - "scripts/**"
       - ".github/workflows/android.yml"
   pull_request:
     paths:
       - "android/**"
+      - "scripts/**"
       - ".github/workflows/android.yml"
   workflow_dispatch:
 
