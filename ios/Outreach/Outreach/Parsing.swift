@@ -28,6 +28,22 @@ func normalizeOptionalText(_ value: String?) -> String? {
     return t.isEmpty ? nil : t
 }
 
+/// Extracts a Google Sheets spreadsheet id from a full URL or returns a plausible raw id token.
+func extractSpreadsheetIdFromText(_ text: String) -> String? {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty { return nil }
+    let pattern = "/spreadsheets/d/([a-zA-Z0-9-_]+)"
+    if let re = try? NSRegularExpression(pattern: pattern, options: []),
+       let m = re.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
+       let r = Range(m.range(at: 1), in: trimmed) {
+        return String(trimmed[r])
+    }
+    if trimmed.range(of: "^[a-zA-Z0-9-_]{20,}$", options: .regularExpression) != nil {
+        return trimmed
+    }
+    return nil
+}
+
 func normalizeBriefComment(_ value: String?) -> String {
     let normalized = normalizeText(value)
     if normalized.isEmpty { return VisitOutcome.other.rawValue }

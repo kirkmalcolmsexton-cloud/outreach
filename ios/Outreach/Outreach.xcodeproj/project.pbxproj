@@ -31,10 +31,16 @@
 		B00100F3 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = PRD0003 /* FirebaseFirestore */; };
 		B00100F4 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = PRD0004 /* GoogleSignIn */; };
 		B00100F5 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = PRD0005 /* GoogleSignInSwift */; };
+		B0010015 /* UiTestTags.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010015 /* UiTestTags.swift */; };
+		B0010016 /* UiAutomationConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010016 /* UiAutomationConfig.swift */; };
+		B0010017 /* VisitLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010017 /* VisitLogView.swift */; };
+		B0020001 /* AppShellUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0020001 /* AppShellUITests.swift */; };
+		B0020002 /* UiTestTags.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0010015 /* UiTestTags.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		APP00001 /* Outreach.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Outreach.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		APP00002 /* OutreachUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OutreachUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F0010001 /* OutreachApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutreachApp.swift; sourceTree = "<group>"; };
 		F0010002 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		F0010003 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -55,6 +61,10 @@
 		F0010012 /* SettingsTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTabView.swift; sourceTree = "<group>"; };
 		F0010013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F0010014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F0010015 /* UiTestTags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UiTestTags.swift; sourceTree = "<group>"; };
+		F0010016 /* UiAutomationConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UiAutomationConfig.swift; sourceTree = "<group>"; };
+		F0010017 /* VisitLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitLogView.swift; sourceTree = "<group>"; };
+		F0020001 /* AppShellUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -70,6 +80,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FRW00002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -77,6 +94,7 @@
 			isa = PBXGroup;
 			children = (
 				GRP00001 /* Outreach */,
+				GRP00002 /* OutreachUITests */,
 				GRP00099 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -101,17 +119,29 @@
 				F001000F /* LoginGateView.swift */,
 				F0010010 /* MapTabView.swift */,
 				F0010011 /* VisitsTabView.swift */,
+				F0010017 /* VisitLogView.swift */,
 				F0010012 /* SettingsTabView.swift */,
 				F0010013 /* Info.plist */,
 				F0010014 /* Assets.xcassets */,
+				F0010015 /* UiTestTags.swift */,
+				F0010016 /* UiAutomationConfig.swift */,
 			);
 			path = Outreach;
+			sourceTree = "<group>";
+		};
+		GRP00002 /* OutreachUITests */ = {
+			isa = PBXGroup;
+			children = (
+				F0020001 /* AppShellUITests.swift */,
+			);
+			path = OutreachUITests;
 			sourceTree = "<group>";
 		};
 		GRP00099 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				APP00001 /* Outreach.app */,
+				APP00002 /* OutreachUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -145,7 +175,42 @@
 			productReference = APP00001 /* Outreach.app */;
 			productType = "com.apple.product-type.application";
 		};
+		TGT00002 /* OutreachUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CFG0004 /* Build configuration list for PBXNativeTarget "OutreachUITests" */;
+			buildPhases = (
+				SRC00002 /* Sources */,
+				FRW00002 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				TDP00001 /* PBXTargetDependency */,
+			);
+			name = OutreachUITests;
+			productName = OutreachUITests;
+			productReference = APP00002 /* OutreachUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXContainerItemProxy section */
+		CPI00001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = PRJ00001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = TGT00001;
+			remoteInfo = Outreach;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		TDP00001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = TGT00001 /* Outreach */;
+			targetProxy = CPI00001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		PRJ00001 /* Project object */ = {
@@ -173,6 +238,7 @@
 			projectRoot = "";
 			targets = (
 				TGT00001 /* Outreach */,
+				TGT00002 /* OutreachUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -252,7 +318,19 @@
 				B001000F /* LoginGateView.swift in Sources */,
 				B0010010 /* MapTabView.swift in Sources */,
 				B0010011 /* VisitsTabView.swift in Sources */,
+				B0010017 /* VisitLogView.swift in Sources */,
 				B0010012 /* SettingsTabView.swift in Sources */,
+				B0010015 /* UiTestTags.swift in Sources */,
+				B0010016 /* UiAutomationConfig.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SRC00002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B0020001 /* AppShellUITests.swift in Sources */,
+				B0020002 /* UiTestTags.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -353,6 +431,42 @@
 			};
 			name = Release;
 		};
+		BCF0005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.outreach.ios.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Outreach;
+			};
+			name = Debug;
+		};
+		BCF0006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.outreach.ios.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Outreach;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -370,6 +484,15 @@
 			buildConfigurations = (
 				BCF0003 /* Debug */,
 				BCF0004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CFG0004 /* Build configuration list for PBXNativeTarget "OutreachUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BCF0005 /* Debug */,
+				BCF0006 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

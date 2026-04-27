@@ -61,6 +61,13 @@ enum GoogleSignInCoordinator {
     }
 
     static var isFullySignedInForSheets: Bool {
+        #if DEBUG
+        switch UiAutomationConfig.mockAuthState {
+        case .signedIn: return true
+        case .signedOut: return false
+        case .none: break
+        }
+        #endif
         guard FirebaseApp.app() != nil,
               Auth.auth().currentUser != nil,
               let u = GIDSignIn.sharedInstance.currentUser

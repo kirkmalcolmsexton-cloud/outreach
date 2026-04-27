@@ -27,6 +27,7 @@ struct LoginGateView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+        .accessibilityIdentifier(UiTestTags.loginGate)
     }
 
     @MainActor

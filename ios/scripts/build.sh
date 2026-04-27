@@ -103,7 +103,7 @@ Usage: $(basename "$0") [build|clean|test|archive]
             OUTREACH_DESTINATION is unset — avoids generic/platform=iOS Simulator when no runtime resolves.
             Override: OUTREACH_DESTINATION=… (e.g. generic/platform=iOS after installing the iOS platform).
   clean   — xcodebuild clean (same destination resolution as build)
-  test    — xcodebuild test (same Simulator resolution as build)
+  test    — xcodebuild test (same Simulator resolution as build; passes -parallel-testing-enabled NO for stable UI tests)
   archive — xcodebuild archive (generic iOS device; requires iOS device platform in Xcode)
 
   Project: ${PROJ}
@@ -286,6 +286,7 @@ case "${ACTION}" in
       -configuration Debug \
       -destination "${DEST}" \
       -derivedDataPath "${DD}" \
+      -parallel-testing-enabled NO \
       -quiet \
       test \
       "${XCODE_EXTRA_BUILD_SETTINGS[@]}"

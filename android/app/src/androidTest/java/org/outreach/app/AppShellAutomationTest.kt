@@ -3,6 +3,7 @@ package org.outreach.app
 import android.Manifest
 import android.content.Intent
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -14,11 +15,14 @@ import androidx.test.rule.GrantPermissionRule
 import com.google.firebase.auth.FirebaseAuth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
 import org.outreach.app.testing.UiAutomationConfig
+import org.outreach.testing.assertCenterXIsToTheLeft
+import org.outreach.testing.assertCenterYIsAbove
 import org.outreach.testing.waitForSemanticTree
 import org.outreach.ui.testtags.TestTags
 
@@ -63,8 +67,12 @@ class AppShellAutomationTest {
         composeRule.onNodeWithTag(TestTags.CONTENT_VISITS).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.NAV_SETTINGS).performClick()
         composeRule.onNodeWithTag(TestTags.CONTENT_SETTINGS).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SETTINGS_ROOT).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.NAV_HOME).performClick()
         composeRule.onNodeWithTag(TestTags.CONTENT_HOME).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.MAP_ROOT).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.MAP_SEARCH).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.MAP_ADD_PERSON).assertIsDisplayed()
     }
 
     @Test
@@ -142,6 +150,33 @@ class AppShellForcedSignedInIntentTest {
         composeRule.onNodeWithTag(TestTags.PROFILE_MENU_SWITCH).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.MODE_LIST).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.MAP_LIST).assertIsDisplayed()
+    }
+
+    /**
+     * Screenshot / manual parity: top app title, Map/List + search, list body, then bottom nav; vertical order
+     * matches Material Scaffold (top bar → home content → bottom bar).
+     */
+    @Test
+    fun listHomeKeyChromeAndLayoutOrder() {
+        composeRule.onNodeWithText("Outreach", substring = true, ignoreCase = false).assertIsDisplayed()
+        composeRule.onNodeWithText("Search name or address", substring = true, ignoreCase = false)
+            .assertIsDisplayed()
+        composeRule.assertCenterYIsAbove(TestTags.MODE_LIST, TestTags.MAP_SEARCH)
+        composeRule.assertCenterYIsAbove(TestTags.MAP_SEARCH, TestTags.MAP_LIST)
+        composeRule.assertCenterYIsAbove(TestTags.MAP_LIST, TestTags.NAV_HOME)
+    }
+
+    @Test
+    fun visitsTab_showsFormCopyAndVerticalOrder() {
+        composeRule.onNodeWithTag(TestTags.NAV_VISITS).performClick()
+        composeRule.onNodeWithText("Visit update").assertIsDisplayed()
+        composeRule.onNodeWithText("Select someone from the Home map or list", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Save offline + queue sync").assertIsDisplayed()
+        val titleMid = composeRule.onNodeWithText("Visit update").getUnclippedBoundsInRoot()
+            .let { ((it.top + it.bottom) / 2f).value }
+        val briefMid = composeRule.onNodeWithTag(TestTags.VISITS_BRIEF).getUnclippedBoundsInRoot()
+            .let { ((it.top + it.bottom) / 2f).value }
+        assertTrue("Visit title should be above brief field", titleMid < briefMid)
     }
 }
 
