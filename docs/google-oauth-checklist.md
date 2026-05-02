@@ -16,8 +16,25 @@ Use this when debugging **403 access_denied**, verification blocks, or Firebase 
 ## 3. Android OAuth client and SHA-1
 
 - **APIs & Services → Credentials**: ensure an **Android** OAuth client exists for `org.outreach.app`.
-- Add your **debug** (and **release**) **SHA-1** fingerprints to that client.
-- If sign-in fails with **DEVELOPER_ERROR (10)** in-app or Logcat, SHA-1 mismatch is a common cause.
+- Add **every SHA-1** for certificates that actually sign installs users run. If sign-in fails with **DEVELOPER_ERROR (10)** in-app or Logcat, a missing fingerprint on this list is a common cause.
+
+### 3a. Why Store / CI builds fail but local builds work
+
+Google Sign-In hashes **the APK/AAB signing certificate**. Different pipelines use **different keys**:
+
+| Install source | Certificate you must register |
+| ---------------- | ------------------------------- |
+| **Debug from Android Studio** | SHA-1 of your **debug.keystore** |
+| **Release from your machine** (same as CI: `bash android/scripts/build.sh release-bundle`, or `./gradlew bundleRelease` with `keystore.properties`) | SHA-1 of the **upload** keystore that signed the build |
+| **APK/AAB downloaded from GitHub Actions** | SHA-1 of the **CI upload keystore** (repo-mode `upload-keystore.jks` / secrets). Often **not** the same file as a developer’s personal machine unless you share one keystore. |
+| **Installed from Google Play** | SHA-1 of **Google Play App Signing** — the **app signing key certificate** shown in Play Console (**Setup → App integrity → App signing**). End users **do not** run an APK signed with your upload key alone; Play re-signs with Google’s key. |
+
+Register **all** of these in **Firebase** → Project settings → Your Android app → **SHA certificate fingerprints**, and in **Google Cloud** → Credentials → your **Android** OAuth client for the same package name. Missing **Play App Signing** is the usual reason **Play Store** installs hit **DEVELOPER_ERROR** while **local** release builds work.
+
+### 3b. Quick checks
+
+- **`keytool -list -v -keystore …`** on each keystore you use (debug, local upload, CI upload) and compare to hashes in Firebase.
+- **Play Console → App signing**: copy **App signing key certificate** SHA-1 (and optionally upload key) into Firebase/GCP as above.
 
 ## 4. Firebase `google-services.json`
 

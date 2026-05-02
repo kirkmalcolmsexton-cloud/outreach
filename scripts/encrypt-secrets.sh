@@ -64,7 +64,12 @@ EOF
       ;;
   esac
 done
-set -- "${FILTERED[@]}"
+# macOS /bin/bash 3.2 + set -u: "${FILTERED[@]}" is "unbound" when the array is empty.
+if [[ ${#FILTERED[@]} -gt 0 ]]; then
+  set -- "${FILTERED[@]}"
+else
+  set --
+fi
 
 usage() {
   cat >&2 <<EOF

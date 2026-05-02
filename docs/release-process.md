@@ -255,7 +255,7 @@ This repo follows **classic GitFlow**: **`main`** matches what ships on **Google
 2. **`git checkout develop && git pull`** then **`git checkout -b release/X.Y.Z`** (same **`X.Y.Z`** as **`versionName`** — no **`v`** in the branch name).
 3. Edit **`android/gradle.properties`**: set **`outreach.versionName`** to **`X.Y.Z`** and bump **`outreach.versionCode`** by at least **1** vs the last Play upload.
 4. Stabilize on **`release/X.Y.Z`** with bugfixes only.
-5. QA using **`docs/release-checklist.md`** and **[`google-oauth-checklist.md`](google-oauth-checklist.md)**. Build a signed bundle locally (**`./gradlew bundleRelease`** from **`android/`** with **`keystore.properties`**) or rely on CI (**§ First-time release**).
+5. QA using **`docs/release-checklist.md`** and **[`google-oauth-checklist.md`](google-oauth-checklist.md)**. Build a signed bundle locally the same way CI does: **`OUTREACH_SECRETS_PASSPHRASE=… bash android/scripts/build.sh release-bundle`** (see **[`docs/build-process.md`](build-process.md)**), or download the artifact from CI.
 6. Upload the **AAB** to Play **Internal** or **Closed testing** first. Ensure OAuth / Maps / Firebase allow the correct **SHA-1** signatures (**upload** vs **Play app signing** — see **`google-oauth-checklist.md`**).
 7. When ready, merge **`release/X.Y.Z` → `main`** via PR.
 8. On **`main`**, tag: **`git tag -a vX.Y.Z -m "Outreach X.Y.Z"`**.
@@ -265,7 +265,7 @@ This repo follows **classic GitFlow**: **`main`** matches what ships on **Google
 ### Hotfix (production emergency)
 
 1. **`git checkout main && git pull`**
-2. **`git checkout -b hotfix/X.Y.Z`** — bump **`outreach.versionCode`** and **`outreach.versionName`** in **`android/gradle.properties`**, fix, **`./gradlew bundleRelease`**, upload to Play.
+2. **`git checkout -b hotfix/X.Y.Z`** — bump **`outreach.versionCode`** and **`outreach.versionName`** in **`android/gradle.properties`**, fix, **`OUTREACH_SECRETS_PASSPHRASE=… bash android/scripts/build.sh release-bundle`**, upload to Play.
 3. Merge **`hotfix/X.Y.Z` → `main`**, tag **`vX.Y.Z`**, then **`git checkout develop && git merge main`** (or cherry-pick) so **`develop`** stays in sync.
 
 ### Secrets and signing (orthogonal to branches)

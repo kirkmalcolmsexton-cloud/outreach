@@ -24,7 +24,7 @@ Consolidated JSON schema (Maps, Firebase, optional iOS plist, signing, optional 
 | Kind | Typical source |
 |------|----------------|
 | **`development_api_key`** / **`release_api_key`** | Google Cloud / Maps Platform — API keys restricted by package + signing cert per environment. |
-| **`google_services`** | Firebase — download **`google-services.json`** (Android) or mirror its structure into the consolidated JSON (see example). |
+| **`google_services`** | Firebase — download **`google-services.json`** (Android), copy to **`android/app/google-services.json`**, then **`bash android/scripts/merge-google-services-into-secrets.sh`**. Or mirror **`google_services`** by hand (see example). |
 | **`google_service_info_plist`** / **`google_service_info_plist_base64`** (optional) | iOS—**`ios/scripts/setup-secrets.sh`** writes **`ios/Outreach/Outreach/GoogleService-Info.plist`** (gitignored). Prefer **base64** in JSON: `base64 -i GoogleService-Info.plist \| tr -d '\n'`. Or download the plist by hand; see [`docs/ios-onboarding.md`](../docs/ios-onboarding.md). |
 | **`android_upload_signing`** (repo mode) | Values must match your **upload keystore**: alias and passwords from when the **`.jks`** was created (**[`android/scripts/create-upload-keystore-and-gh-secrets.sh`](../android/scripts/create-upload-keystore-and-gh-secrets.sh)** or Android Studio / **`keytool`**). |
 | Upload keystore bytes (repo mode) | Generated locally; only the **`.age`** ciphertext is committed. Encrypt with **`android/scripts/encrypt-upload-keystore-age.sh`** (defaults: read **`~/.config/outreach/upload-keystore.jks`**, write **`secrets/upload-keystore.jks.age`**). **`scripts/encrypt-upload-keystore-age.sh`** forwards here. |
@@ -62,7 +62,8 @@ Fork PRs do **not** receive repository secrets — release signing jobs are not 
 
 1. Copy **`outreach-secrets.example.json`** → **`secrets/outreach-secrets.json`** if you are bootstrapping (or edit your existing plaintext file).
 2. Fill real Maps keys, **`google_services`**, optional **iOS plist** keys (**`google_service_info_plist_base64`** or **`google_service_info_plist`**), and optionally **`android_upload_signing`** per schema.
-3. (Optional) Merge **`~/etc/development.env`** into the **`development_env`** object in **`outreach-secrets.json`**: **`bash scripts/merge-development-env-into-secrets.sh`**
+3. To refresh **`google_services`** from a new Firebase download: copy the file to **`android/app/google-services.json`**, then **`bash android/scripts/merge-google-services-into-secrets.sh`** (no arguments).
+4. (Optional) Merge **`~/etc/development.env`** into the **`development_env`** object in **`outreach-secrets.json`**: **`bash scripts/merge-development-env-into-secrets.sh`**
 
 ### 2. Encrypt and commit **`outreach-secrets.json.age`**
 

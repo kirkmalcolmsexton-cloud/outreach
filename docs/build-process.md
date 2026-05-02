@@ -36,9 +36,15 @@ See **[`docs/testing-process.md`](testing-process.md)** for when to add physical
 
 ## Release builds (AAB) and signing
 
-Release artifacts use **`bundleRelease`**. Locally, signing can use **`android/keystore.properties`** (gitignored); CI resolves **`ANDROID_UPLOAD_*`** Gradle env vars from **`secrets/outreach-secrets.json`** (**`android_upload_signing`**) plus **`secrets/upload-keystore.jks.age`**, or from legacy GitHub **`ANDROID_UPLOAD_*`** secrets (**[`github-actions-secrets.md`](github-actions-secrets.md)**).
+**Same behavior as GitHub Actions:** from the repo root, run **`OUTREACH_SECRETS_PASSPHRASE=… bash android/scripts/build.sh release-bundle`** (or **`android/scripts/build-release-bundle.sh`**). That runs **`setup-secrets.sh`**, decrypts **`secrets/upload-keystore.jks.age`**, exports **`ANDROID_UPLOAD_*`** for Gradle, then **`./gradlew bundleRelease`**.
 
-Authoritative steps for keystore custody, **`bundleRelease`**, and Play uploads: **[`docs/release-process.md`](release-process.md)**. Signing wiring is implemented in **`android/app/build.gradle.kts`**.
+**Secrets source:** CI always builds from committed **`secrets/outreach-secrets.json.age`**. Locally, **`setup-secrets`** prefers **`.age`** over plaintext when both exist — so edits to **`secrets/outreach-secrets.json`** alone do not match CI until you run **`bash scripts/encrypt-secrets.sh`** and commit the updated **`.age`**. The release-bundle script prints **warnings** when plaintext and **`.age`** disagree or when **`.age`** is missing.
+
+**Gradle-only** **`./gradlew bundleRelease`** from **`android/`** can use **`android/keystore.properties`** (gitignored) instead — convenient offline, but **not CI parity** unless that file references the **same** keystore file CI uses. When **`secrets/upload-keystore.jks.age`** exists, Gradle prints a reminder if **`keystore.properties`** is in use.
+
+CI resolves env vars from **`secrets/outreach-secrets.json`** (**`android_upload_signing`**) plus the decrypted keystore, or from legacy GitHub **`ANDROID_UPLOAD_*`** secrets (**[`github-actions-secrets.md`](github-actions-secrets.md)**).
+
+Authoritative steps for keystore custody and Play uploads: **[`docs/release-process.md`](release-process.md)**. Signing wiring is in **`android/app/build.gradle.kts`**.
 
 ## Related links
 

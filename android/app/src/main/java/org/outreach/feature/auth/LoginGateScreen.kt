@@ -162,8 +162,11 @@ class AuthViewModel(
         val debugSuffix =
             " Debug: package=$packageName, sha1=${if (signingSha1.isBlank()) "unknown" else signingSha1}, firebaseUser=$hasFirebaseUser, googleAccount=$hasGoogleAccount, extrasKeys=${if (extrasKeys.isBlank()) "none" else extrasKeys}, status=${if (googleSignInStatus.isBlank()) "none" else googleSignInStatus}."
         _error.value = if (developerError) {
-            "Google sign-in failed with DEVELOPER_ERROR. Fix OAuth config: ensure package name is $packageName, " +
-                "add this build's SHA-1 to the Android OAuth client, and use matching Firebase/google-services.json.$debugSuffix"
+            "Google sign-in failed with DEVELOPER_ERROR (OAuth SHA-1 / package mismatch). Register the SHA-1 below in " +
+                "Firebase → Project settings → Your Android app and in Google Cloud → Credentials → Android OAuth client " +
+                "for $packageName. Play Store installs need the App signing key SHA-1 from Play Console (Setup → App signing), " +
+                "not only your PC debug/upload keys. GitHub-built APKs/AABs need the CI upload keystore SHA-1 if it differs " +
+                "from your local machine.$debugSuffix"
         } else {
             "Sign-in did not finish (back/cancel or Google blocked the app). If you saw a Google " +
                 "verification/testing message, add this Google account under Test users for the Cloud " +
@@ -184,7 +187,8 @@ class AuthViewModel(
         val label = runCatching { GoogleSignInStatusCodes.getStatusCodeString(code) }.getOrElse { "unknown" }
         val extra = when (code) {
             com.google.android.gms.common.ConnectionResult.DEVELOPER_ERROR ->
-                " Add the app’s debug/release SHA-1 to the Android OAuth client in Google Cloud Console."
+                " Register every signing certificate you ship with: PC debug/upload, CI upload keystore, and Play App Signing key " +
+                    "(Play Console); see docs/google-oauth-checklist.md."
             GoogleSignInStatusCodes.SIGN_IN_FAILED ->
                 " If Google blocked access (verification / testing), add this Google account under Test users " +
                     "for the same Cloud project as your Web client ID, or finish verification."
