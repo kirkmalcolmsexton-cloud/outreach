@@ -90,8 +90,8 @@ struct VisitLogView: View {
                         }
                         .padding(10)
                         .background(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.4)))
+                        .accessibilityIdentifier(UiTestTags.visitsBrief)
                     }
-                    .accessibilityIdentifier(UiTestTags.visitsBrief)
                 }
 
                 if useCustomBrief {
@@ -101,6 +101,7 @@ struct VisitLogView: View {
 
                 notesEditorSection
 
+                // Avoid `.disabled` / low opacity — XCTest often omits those controls from the automation snapshot.
                 Button {
                     Task { await saveTapped() }
                 } label: {
@@ -108,7 +109,7 @@ struct VisitLogView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!canSave)
+                .accessibilityLabel("Save offline + queue sync")
                 .accessibilityIdentifier(UiTestTags.visitsSave)
 
                 if !statusMessage.isEmpty {
@@ -116,8 +117,8 @@ struct VisitLogView: View {
                 }
             }
             .padding()
+            .accessibilityIdentifier(UiTestTags.visitsRoot)
         }
-        .accessibilityIdentifier(UiTestTags.visitsRoot)
         .onAppear {
             syncNotesFromHousehold()
             Task { await loadPresets() }

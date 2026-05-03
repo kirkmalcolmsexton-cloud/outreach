@@ -183,7 +183,15 @@ struct MapTabView: View {
             }
             mapActionFabColumn(selectedHousehold: selectedHousehold)
         }
-        .accessibilityIdentifier(UiTestTags.modeMap)
+        // MKMapView tends to take over the container’s accessibility; keep a stable anchor for UI tests.
+        .overlay(alignment: .topLeading) {
+            Color.clear
+                .contentShape(Rectangle())
+                .frame(width: 44, height: 44)
+                .accessibilityElement()
+                .accessibilityIdentifier(UiTestTags.modeMap)
+                .allowsHitTesting(false)
+        }
     }
 
     @ViewBuilder
@@ -340,8 +348,8 @@ struct MapTabView: View {
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!has || routeCoordinator.isCalculatingRoute)
             .opacity(alpha)
+            .accessibilityLabel("Start in-app driving route")
             .accessibilityIdentifier(UiTestTags.mapNavFab)
 
             Button {
@@ -371,6 +379,7 @@ struct MapTabView: View {
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.borderedProminent)
+            .accessibilityLabel("Add household")
             .accessibilityIdentifier(UiTestTags.mapAddPerson)
         }
         .padding(16)

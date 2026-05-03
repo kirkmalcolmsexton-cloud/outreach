@@ -76,6 +76,28 @@ class AppShellAutomationTest {
     }
 
     @Test
+    fun visitsTab_exposesTaggedVisitLoggingControls() {
+        composeRule.onNodeWithTag(TestTags.NAV_VISITS).performClick()
+        composeRule.onNodeWithTag(TestTags.CONTENT_VISITS).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.VISITS_ROOT).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.VISITS_BRIEF).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.VISITS_NOTES).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.VISITS_SAVE).assertIsDisplayed()
+    }
+
+    @Test
+    fun settingsTab_exposesTaggedSpreadsheetControls() {
+        composeRule.onNodeWithTag(TestTags.NAV_SETTINGS).performClick()
+        composeRule.onNodeWithTag(TestTags.SETTINGS_ROOT).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SETTINGS_SPREADSHEET_LINK_FIELD).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SETTINGS_LOAD_SPREADSHEET).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SETTINGS_APP_VERSION).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SETTINGS_PICK_SPREADSHEET).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SETTINGS_VALIDATE).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SETTINGS_SYNC).assertIsDisplayed()
+    }
+
+    @Test
     fun profileMenu_signedOut_showsLoginAction() {
         composeRule.onNodeWithTag(TestTags.PROFILE_BUTTON).performClick()
         composeRule.onNodeWithTag(TestTags.PROFILE_MENU_LOGIN).assertIsDisplayed()
@@ -240,5 +262,47 @@ class AppShellMockSignedInConfigurableEmailTest {
                     ?: UiAutomationConfig.DEFAULT_MOCK_USER_EMAIL
             composeRule.onNodeWithText(expectedEmail).assertIsDisplayed()
         }
+    }
+}
+
+/**
+ * Map mode loads Google Map compose host; keep isolated so list-mode CI stays stable if Maps flakes.
+ */
+class AppShellMapModeForcedSignedInIntentTest {
+
+    private val intent =
+        Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java).apply {
+            putExtra(UiAutomationConfig.EXTRA_FORCED_AUTH_STATE, "signed_in")
+            putExtra(UiAutomationConfig.EXTRA_SKIP_STARTUP_DELAY, true)
+            putExtra(UiAutomationConfig.EXTRA_HOME_VIEW_MODE, "map")
+        }
+
+    private val activityScenarioRule = ActivityScenarioRule<MainActivity>(intent)
+    private val composeRule = AndroidComposeTestRule(
+        activityRule = activityScenarioRule,
+        activityProvider = ::getMainActivityFromScenarioRule
+    )
+    private val permissionRule =
+        GrantPermissionRule.grant(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+
+    @get:Rule
+    val chain: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule)
+
+    @Before
+    fun waitForComposeReady() {
+        composeRule.waitForSemanticTree()
+    }
+
+    @Test
+    fun mapMode_showsMapChromeTags() {
+        composeRule.onNodeWithTag(TestTags.APP_ROOT).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.MODE_MAP).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.MAP_ROOT).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.MAP_SEARCH).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.MAP_NAV_FAB).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.MAP_ADD_PERSON).assertIsDisplayed()
     }
 }

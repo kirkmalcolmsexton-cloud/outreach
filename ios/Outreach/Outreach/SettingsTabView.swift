@@ -61,6 +61,12 @@ struct SettingsTabView: View {
     private var formBody: some View {
         Form {
             Section {
+                if UiAutomationConfig.isUiTesting {
+                    Text("Version \(appVersionLabel)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .accessibilityIdentifier(UiTestTags.settingsAppVersion)
+                }
                 HStack(spacing: 20) {
                     Button {
                         showFileImporter = true
@@ -193,7 +199,7 @@ struct SettingsTabView: View {
                 Text("Version \(appVersionLabel)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .accessibilityIdentifier(UiTestTags.settingsAppVersion)
+                    .accessibilityLabel("Version \(appVersionLabel)")
             }
         }
         .accessibilityIdentifier(UiTestTags.settingsRoot)
