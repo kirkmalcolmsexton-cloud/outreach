@@ -82,8 +82,19 @@ struct SettingsTabView: View {
                     .accessibilityIdentifier(UiTestTags.settingsSync)
                     Spacer()
                 }
-                TextField("Spreadsheet URL or file ID", text: $sheetId)
-                Button("Load tab names from Sheets") { Task { await loadTabs() } }
+                HStack(alignment: .center, spacing: 12) {
+                    TextField("Spreadsheet link or ID", text: $sheetId)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier(UiTestTags.settingsSpreadsheetLinkField)
+                    Button("Load") {
+                        Task { await loadTabs() }
+                    }
+                    .accessibilityIdentifier(UiTestTags.settingsLoadSpreadsheet)
+                }
+                Text("On iPhone this picker uses Apple’s Files view of Google Drive, not the full drive.google.com or Android picker—shared items often won’t appear here. Paste a Sheets link or spreadsheet ID above (same as opening the sheet in Safari), or move the file to My Drive in the Drive app first.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 if isLoading { ProgressView() }
                 if !titleHint.isEmpty { Text(titleHint).font(.caption) }
             } header: {
@@ -197,10 +208,12 @@ struct SettingsTabView: View {
                 guard url.startAccessingSecurityScopedResource() else { return }
                 defer { url.stopAccessingSecurityScopedResource() }
                 let path = url.absoluteString
-                if let id = extractSpreadsheetIdFromText(path) {
-                    sheetId = id
-                } else if let id = extractSpreadsheetIdFromText(url.lastPathComponent) {
-                    sheetId = id
+                let resolved: String? =
+                    extractSpreadsheetIdFromText(path)
+                    ?? extractSpreadsheetIdFromText(url.lastPathComponent)
+                if let id = resolved {
+                    sheetId = canonicalGoogleSheetsEditURL(forSpreadsheetId: id)
+                    Task { await loadTabs() }
                 }
             case .failure:
                 break
@@ -208,7 +221,17 @@ struct SettingsTabView: View {
         }
         .onAppear {
             syncStateFromStore()
+            Task { await reloadTabsAfterRestore() }
         }
+    }
+
+    /// Refetch tab names from Sheets after relaunch so ZIP / tab toggles match stored selection (`availableTabs` is not persisted).
+    @MainActor
+    private func reloadTabsAfterRestore() async {
+        let id = appConfig.config.spreadsheetId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return }
+        guard availableTabs.isEmpty else { return }
+        await loadTabs()
     }
 
     private func isZipTabName(_ name: String) -> Bool {
@@ -241,7 +264,14 @@ struct SettingsTabView: View {
 
     private func syncStateFromStore() {
         let c = appConfig.config
-        sheetId = c.spreadsheetId
+        let sid = c.spreadsheetId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let link = c.spreadsheetDisplayLink?.trimmingCharacters(in: .whitespacesAndNewlines), !link.isEmpty {
+            sheetId = link
+        } else if !sid.isEmpty {
+            sheetId = canonicalGoogleSheetsEditURL(forSpreadsheetId: sid)
+        } else {
+            sheetId = ""
+        }
         selected = c.selectedTabs
         titleHint = c.spreadsheetTitle.map { "Document: \($0)" } ?? ""
         briefCommentMode = c.mapBriefCommentMode
@@ -333,7 +363,9 @@ struct SettingsTabView: View {
         var id = sheetId.trimmingCharacters(in: .whitespacesAndNewlines)
         if let extracted = extractSpreadsheetIdFromText(id) {
             id = extracted
-            sheetId = extracted
+            sheetId = canonicalGoogleSheetsEditURL(forSpreadsheetId: extracted)
+        } else if !id.isEmpty {
+            sheetId = canonicalGoogleSheetsEditURL(forSpreadsheetId: id)
         }
         guard !id.isEmpty, let repo = ServiceLocator.repository else {
             status = "Enter a spreadsheet id or paste a Google Sheets URL."
@@ -356,7 +388,9 @@ struct SettingsTabView: View {
         var id = sheetId.trimmingCharacters(in: .whitespacesAndNewlines)
         if let extracted = extractSpreadsheetIdFromText(id) {
             id = extracted
-            sheetId = extracted
+            sheetId = canonicalGoogleSheetsEditURL(forSpreadsheetId: extracted)
+        } else if !id.isEmpty {
+            sheetId = canonicalGoogleSheetsEditURL(forSpreadsheetId: id)
         }
         guard !id.isEmpty, let repo = ServiceLocator.repository else {
             status = "Enter a spreadsheet id first."
@@ -383,7 +417,9 @@ struct SettingsTabView: View {
         var id = sheetId.trimmingCharacters(in: .whitespacesAndNewlines)
         if let extracted = extractSpreadsheetIdFromText(id) {
             id = extracted
-            sheetId = extracted
+            sheetId = canonicalGoogleSheetsEditURL(forSpreadsheetId: extracted)
+        } else if !id.isEmpty {
+            sheetId = canonicalGoogleSheetsEditURL(forSpreadsheetId: id)
         }
         guard !id.isEmpty, let repo = ServiceLocator.repository else {
             status = "Spreadsheet id required."
@@ -401,6 +437,7 @@ struct SettingsTabView: View {
             let title = try? await repo.fetchSpreadsheetTitle(spreadsheetId: id)
             let c = AppConfig(
                 spreadsheetId: id,
+                spreadsheetDisplayLink: canonicalGoogleSheetsEditURL(forSpreadsheetId: id),
                 spreadsheetTitle: title,
                 selectedTabs: selected,
                 mapBriefCommentMode: briefCommentMode,

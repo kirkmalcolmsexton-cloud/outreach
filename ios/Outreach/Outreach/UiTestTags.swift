@@ -32,6 +32,8 @@ enum UiTestTags {
 
     static let settingsRoot = "settings_root"
     static let settingsPickSpreadsheet = "settings_pick_spreadsheet"
+    static let settingsSpreadsheetLinkField = "settings_spreadsheet_link_field"
+    static let settingsLoadSpreadsheet = "settings_load_spreadsheet"
     static let settingsValidate = "settings_validate"
     static let settingsSync = "settings_sync"
     static let settingsZipSection = "settings_zip_section"

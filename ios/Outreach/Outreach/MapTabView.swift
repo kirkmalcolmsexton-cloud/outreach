@@ -36,8 +36,72 @@ struct MapTabView: View {
     @State private var addName = ""
     @State private var addStreet = ""
     @State private var addNeighborhood = ""
+    @StateObject private var routeCoordinator = MapRoutingCoordinator()
+
+    private var selectedHouseholdForActions: HouseholdRecord? {
+        selectedHouseholdId.flatMap { id in households.first { $0.id == id } }
+    }
 
     var body: some View {
+        homeScrollContent()
+            .accessibilityIdentifier(UiTestTags.contentHome)
+            .onChange(of: selectedHouseholdId) { _, _ in
+                routeCoordinator.clearRoute()
+            }
+            .onChange(of: routeCoordinator.routeFitRevision) { _, _ in
+                guard let region = MKCoordinateRegion(fitting: routeCoordinator.routeCoordinates) else { return }
+                position = .region(region)
+            }
+            .alert("Routing", isPresented: routingErrorPresented) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(routeCoordinator.routingError ?? "")
+            }
+            .sheet(isPresented: $showAddPerson) {
+                addPersonSheetView()
+            }
+    }
+
+    private var routingErrorPresented: Binding<Bool> {
+        Binding(
+            get: { routeCoordinator.routingError != nil },
+            set: { if !$0 { routeCoordinator.acknowledgeRoutingError() } }
+        )
+    }
+
+    @ViewBuilder
+    private func addPersonSheetView() -> some View {
+        NavigationStack {
+            Form {
+                Section("New household") {
+                    Picker("ZIP tab", selection: $addTab) {
+                        ForEach(Array(config.selectedTabs).sorted(), id: \.self) { t in
+                            Text(t).tag(t)
+                        }
+                    }
+                    TextField("Name", text: $addName)
+                    TextField("Street address", text: $addStreet)
+                    TextField("Neighborhood", text: $addNeighborhood)
+                }
+            }
+            .navigationTitle("Add person")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showAddPerson = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        Task { await confirmAddPerson() }
+                    }
+                }
+            }
+        }
+        .onAppear {
+            addTab = config.selectedTabs.sorted().first ?? ""
+        }
+    }
+
+    private func filteredHouseholdsForDisplay() -> [HouseholdRecord] {
         let (start, end) = resolvedMapDateRange(config: config, householdRecords: households)
         let pass1 = filterHouseholdsForMap(
             data: households,
@@ -48,89 +112,220 @@ struct MapTabView: View {
             endDate: end
         )
         let pass2 = pass1.filter { householdMatchesTextSearch($0, query: searchQuery) }
-        let filtered = applyOldestRecordsLimit(pass2, limit: config.mapOldestRecordsLimit)
-        let selectedHousehold = selectedHouseholdId.flatMap { id in households.first { $0.id == id } }
+        return applyOldestRecordsLimit(pass2, limit: config.mapOldestRecordsLimit)
+    }
 
+    @ViewBuilder
+    private func homeScrollContent() -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        TextField("Search name or address", text: $searchQuery)
-                            .textFieldStyle(.roundedBorder)
-                            .accessibilityIdentifier(UiTestTags.mapSearch)
-                    }
-                    .padding(.horizontal)
-                    if mapHomeMode == .map {
-                        ZStack(alignment: .bottomTrailing) {
-                            ZStack(alignment: .bottomLeading) {
-                                mapContent(records: filtered, position: $position)
-                                Text("\(filtered.count) on map after filters")
-                                    .font(.caption2)
-                                    .padding(8)
-                                    .background(.ultraThinMaterial)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .padding()
-                            }
-                            mapActionFabColumn(selectedHousehold: selectedHousehold)
-                        }
-                        .accessibilityIdentifier(UiTestTags.modeMap)
-                    } else {
-                        ZStack(alignment: .bottomTrailing) {
-                            List {
-                                ForEach(filtered) { h in
-                                    Button {
-                                        selectedHouseholdId = h.id
-                                    } label: {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(h.name).font(.headline)
-                                            Text(h.streetAddress + ", " + h.neighborhood)
-                                                .font(.subheadline)
-                                                .foregroundStyle(.secondary)
-                                            Text("Tab \(h.source.sheetName) · \(formatBriefComment(h.briefComment))")
-                                                .font(.caption)
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .listStyle(.plain)
-                            mapActionFabColumn(selectedHousehold: selectedHousehold)
-                        }
-                        .accessibilityElement(children: .contain)
-                        .accessibilityIdentifier(UiTestTags.modeList)
-                    }
-                }
-            }
-        .accessibilityIdentifier(UiTestTags.contentHome)
-        .sheet(isPresented: $showAddPerson) {
-            NavigationStack {
-                Form {
-                    Section("New household") {
-                        Picker("ZIP tab", selection: $addTab) {
-                            ForEach(Array(config.selectedTabs).sorted(), id: \.self) { t in
-                                Text(t).tag(t)
-                            }
-                        }
-                        TextField("Name", text: $addName)
-                        TextField("Street address", text: $addStreet)
-                        TextField("Neighborhood", text: $addNeighborhood)
-                    }
-                }
-                .navigationTitle("Add person")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { showAddPerson = false }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Add") {
-                            Task { await confirmAddPerson() }
-                        }
-                    }
-                }
-            }
-            .onAppear {
-                addTab = config.selectedTabs.sorted().first ?? ""
+            searchFieldRow()
+            if mapHomeMode == .map {
+                mapHomeLayer(
+                    filtered: filteredHouseholdsForDisplay(),
+                    selectedHousehold: selectedHouseholdForActions
+                )
+            } else {
+                listHomeLayer(
+                    filtered: filteredHouseholdsForDisplay(),
+                    selectedHousehold: selectedHouseholdForActions
+                )
             }
         }
+    }
+
+    private func searchFieldRow() -> some View {
+        HStack {
+            TextField("Search name or address", text: $searchQuery)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier(UiTestTags.mapSearch)
+        }
+        .padding(.horizontal)
+    }
+
+    @ViewBuilder
+    private func mapHomeLayer(filtered: [HouseholdRecord], selectedHousehold: HouseholdRecord?) -> some View {
+        ZStack(alignment: .bottomTrailing) {
+            ZStack(alignment: .bottomLeading) {
+                ZStack {
+                    ZStack {
+                        mapContent(
+                            records: filtered,
+                            position: $position,
+                            routeCoordinates: routeCoordinator.routeCoordinates
+                        )
+                        if routeCoordinator.isCalculatingRoute {
+                            ProgressView()
+                                .padding(12)
+                                .background(.ultraThinMaterial)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                    VStack {
+                        if let summary = routeCoordinator.routeSummary {
+                            routeGuidanceCard(summary)
+                                .padding(.horizontal, 12)
+                                .padding(.top, 8)
+                        }
+                        if let h = selectedHousehold {
+                            householdDetailCard(h)
+                                .padding(.horizontal, 12)
+                                .padding(.top, 8)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+                Text("\(filtered.count) on map after filters")
+                    .font(.caption2)
+                    .padding(8)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .padding()
+            }
+            mapActionFabColumn(selectedHousehold: selectedHousehold)
+        }
+        .accessibilityIdentifier(UiTestTags.modeMap)
+    }
+
+    @ViewBuilder
+    private func routeGuidanceCard(_ summary: DrivingRouteSummary) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("En route")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(summary.destinationName)
+                        .font(.headline)
+                    Text("\(summary.etaShortFormatted) · \(summary.distanceShortFormatted)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text("Arrive around \(summary.projectedArrivalClockTime)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Button {
+                    routeCoordinator.repeatSpokenSummary()
+                } label: {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Repeat spoken directions")
+            }
+            if let next = summary.stepInstructions.first {
+                Text("Next")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(next)
+                    .font(.body)
+                    .fontWeight(.semibold)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if summary.stepInstructions.count > 1 {
+                DisclosureGroup {
+                    ForEach(Array(summary.stepInstructions.enumerated()), id: \.offset) { pair in
+                        Text("\(pair.offset + 1). \(pair.element)")
+                            .font(.caption)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, 2)
+                    }
+                } label: {
+                    Text("All steps (\(summary.stepInstructions.count))")
+                        .font(.caption)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func householdDetailCard(_ h: HouseholdRecord) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(h.name)
+                    .font(.headline)
+                Spacer(minLength: 8)
+                Button {
+                    selectedHouseholdId = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss")
+            }
+            Text(h.streetAddress)
+                .font(.subheadline)
+            if !h.neighborhood.isEmpty {
+                Text(h.neighborhood)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Text(formatBriefComment(h.briefComment))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Text("Last visited: \(formattedLastVisitedLabel(h.lastVisited))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("Tab \(h.source.sheetName)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            if let n = h.notes, !n.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(n)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(4)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func formattedLastVisitedLabel(_ raw: String?) -> String {
+        guard let raw, let d = parseIsoDateOrNull(raw) else { return "Not visited" }
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .none
+        return f.string(from: d)
+    }
+
+    @ViewBuilder
+    private func listHomeLayer(filtered: [HouseholdRecord], selectedHousehold: HouseholdRecord?) -> some View {
+        ZStack(alignment: .bottomTrailing) {
+            List {
+                ForEach(filtered) { h in
+                    Button {
+                        selectedHouseholdId = h.id
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(h.name).font(.headline)
+                            Text(h.streetAddress + ", " + h.neighborhood)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Text("Tab \(h.source.sheetName) · \(formatBriefComment(h.briefComment))")
+                                .font(.caption)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .listStyle(.plain)
+            mapActionFabColumn(selectedHousehold: selectedHousehold)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(UiTestTags.modeList)
     }
 
     @ViewBuilder
@@ -139,13 +334,13 @@ struct MapTabView: View {
         let alpha: CGFloat = has ? 1.0 : 0.45
         VStack(spacing: 10) {
             Button {
-                openDrivingDirections(for: selectedHousehold)
+                startInAppDrivingRoute(for: selectedHousehold)
             } label: {
                 Image(systemName: "play.fill")
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!has)
+            .disabled(!has || routeCoordinator.isCalculatingRoute)
             .opacity(alpha)
             .accessibilityIdentifier(UiTestTags.mapNavFab)
 
@@ -209,15 +404,12 @@ struct MapTabView: View {
         }
     }
 
-    private func openDrivingDirections(for h: HouseholdRecord?) {
+    private func startInAppDrivingRoute(for h: HouseholdRecord?) {
         guard let h else { return }
         if let la = h.latitude, let lo = h.longitude {
-            let dest = CLLocationCoordinate2D(latitude: la, longitude: lo)
-            let placemark = MKPlacemark(coordinate: dest)
-            let item = MKMapItem(placemark: placemark)
-            item.name = h.name
-            item.openInMaps(
-                launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving]
+            routeCoordinator.requestDrivingRoute(
+                to: CLLocationCoordinate2D(latitude: la, longitude: lo),
+                destinationName: h.name
             )
             return
         }
@@ -242,27 +434,52 @@ struct MapTabView: View {
     }
 
     @ViewBuilder
-    private func mapContent(records: [HouseholdRecord], position: Binding<MapCameraPosition>) -> some View {
+    private func mapContent(
+        records: [HouseholdRecord],
+        position: Binding<MapCameraPosition>,
+        routeCoordinates: [CLLocationCoordinate2D]
+    ) -> some View {
         let coordRecords = records.compactMap { h -> (HouseholdRecord, CLLocationCoordinate2D)? in
             guard let la = h.latitude, let lo = h.longitude else { return nil }
             return (h, CLLocationCoordinate2D(latitude: la, longitude: lo))
         }
-        if coordRecords.isEmpty {
-            ZStack {
-                Map(position: position) { }
+        ZStack {
+            Map(position: position) {
+                if !routeCoordinates.isEmpty {
+                    MapPolyline(coordinates: routeCoordinates)
+                        .stroke(.blue, lineWidth: 5)
+                }
+                ForEach(coordRecords, id: \.0.id) { h, c in
+                    Annotation(h.name, coordinate: c) {
+                        let selected = selectedHouseholdId == h.id
+                        Button {
+                            if selectedHouseholdId == h.id {
+                                selectedHouseholdId = nil
+                            } else {
+                                selectedHouseholdId = h.id
+                            }
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.clear)
+                                    .frame(width: 44, height: 44)
+                                Circle()
+                                    .strokeBorder(selected ? Color.primary : Color.clear, lineWidth: 2)
+                                    .frame(width: 20, height: 20)
+                                Circle()
+                                    .fill(briefColor(h.briefComment))
+                                    .frame(width: 14, height: 14)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text(h.name))
+                    }
+                }
+            }
+            if coordRecords.isEmpty && routeCoordinates.isEmpty {
                 Text("No coordinates for the current filter. Add addresses or adjust filters in Settings.")
                     .padding()
                     .background(.ultraThinMaterial)
-            }
-        } else {
-            Map(position: position) {
-                ForEach(coordRecords, id: \.0.id) { h, c in
-                    Annotation(h.name, coordinate: c) {
-                        Circle()
-                            .fill(briefColor(h.briefComment))
-                            .frame(width: 14, height: 14)
-                    }
-                }
             }
         }
     }

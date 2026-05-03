@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Visit logging form aligned with Android `VisitLogScreen.kt`.
 struct VisitLogView: View {
@@ -98,10 +99,7 @@ struct VisitLogView: View {
                         .textFieldStyle(.roundedBorder)
                 }
 
-                TextField("Notes", text: $notes, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(3 ... 8)
-                    .accessibilityIdentifier(UiTestTags.visitsNotes)
+                notesEditorSection
 
                 Button {
                     Task { await saveTapped() }
@@ -126,6 +124,34 @@ struct VisitLogView: View {
         }
         .onChange(of: selectedHouseholdId) { _, _ in
             syncNotesFromHousehold()
+        }
+    }
+
+    private var notesEditorSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Notes")
+                    .font(.subheadline.weight(.semibold))
+                Image(systemName: "square.and.pencil")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            Text("Tap below to add or edit free-form notes for this visit.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextField("Tap to type notes…", text: $notes, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(4 ... 10)
+                .padding(12)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color(uiColor: .separator), lineWidth: 1)
+                )
+                .accessibilityIdentifier(UiTestTags.visitsNotes)
+                .accessibilityHint("Editable multi-line text field.")
         }
     }
 

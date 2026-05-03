@@ -7,6 +7,7 @@ final class AppConfigStore: ObservableObject {
     private let defaults: UserDefaults
     private let keys = (
         spreadsheet: "spreadsheet_id",
+        displayLink: "spreadsheet_display_link",
         title: "spreadsheet_title",
         tabs: "selected_tabs",
         mapBrief: "map_brief_mode",
@@ -31,6 +32,7 @@ final class AppConfigStore: ObservableObject {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+        let displayLinkRaw = (defaults.string(forKey: keys.displayLink) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let titleRaw = (defaults.string(forKey: keys.title) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let mapBrief = defaults.string(forKey: keys.mapBrief) ?? ""
         let quick = defaults.string(forKey: keys.quick) ?? ""
@@ -38,8 +40,10 @@ final class AppConfigStore: ObservableObject {
             guard let s = defaults.string(forKey: keys.oldest), let n = Int(s), n > 0 else { return nil }
             return n
         }()
+        let sid = defaults.string(forKey: keys.spreadsheet) ?? ""
         config = AppConfig(
-            spreadsheetId: defaults.string(forKey: keys.spreadsheet) ?? "",
+            spreadsheetId: sid,
+            spreadsheetDisplayLink: displayLinkRaw.isEmpty ? nil : displayLinkRaw,
             spreadsheetTitle: titleRaw.isEmpty ? nil : titleRaw,
             selectedTabs: Set(tabs),
             mapBriefCommentMode: mapBrief.isEmpty ? "include_all" : mapBrief,
@@ -53,6 +57,11 @@ final class AppConfigStore: ObservableObject {
 
     func update(_ c: AppConfig) {
         defaults.set(c.spreadsheetId, forKey: keys.spreadsheet)
+        if let link = c.spreadsheetDisplayLink?.trimmingCharacters(in: .whitespacesAndNewlines), !link.isEmpty {
+            defaults.set(link, forKey: keys.displayLink)
+        } else {
+            defaults.removeObject(forKey: keys.displayLink)
+        }
         if let t = c.spreadsheetTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty {
             defaults.set(t, forKey: keys.title)
         } else {

@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -68,6 +69,9 @@ fun SettingsScreen(
     val prettyDateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
     val zipTabPattern = remember { Regex("^\\d{5}(-\\d{4})?$") }
     var spreadsheetId by remember { mutableStateOf("") }
+    /** Text field value; only committed [spreadsheetId] on Load or picker updates tab loading. */
+    var spreadsheetDraft by remember { mutableStateOf("") }
+    var spreadsheetReloadNonce by remember { mutableStateOf(0) }
     var selectedTabs by remember { mutableStateOf(savedConfig.selectedTabs) }
     var availableZipTabs by remember { mutableStateOf<List<String>>(emptyList()) }
     var isLoadingTabs by remember { mutableStateOf(false) }
@@ -202,6 +206,10 @@ fun SettingsScreen(
         }
     }
 
+    LaunchedEffect(spreadsheetId) {
+        spreadsheetDraft = spreadsheetId
+    }
+
     LaunchedEffect(pickedSpreadsheetId) {
         val picked = pickedSpreadsheetId ?: return@LaunchedEffect
         if (picked.isBlank()) return@LaunchedEffect
@@ -226,20 +234,18 @@ fun SettingsScreen(
             if (normalizeSpreadsheetIdInput(nextSpreadsheetId) != null) {
                 persistFullConfig(selectedTabs)
             }
+            spreadsheetReloadNonce++
         }
     }
     val normalizedSpreadsheetId = remember(spreadsheetId) {
         normalizeSpreadsheetIdInput(spreadsheetId)
     }
-    LaunchedEffect(normalizedSpreadsheetId) {
+    LaunchedEffect(normalizedSpreadsheetId, spreadsheetReloadNonce) {
         pendingSpreadsheetTitle = null
         val normalized = normalizedSpreadsheetId
         if (normalized == null) {
             availableZipTabs = emptyList()
             isLoadingTabs = false
-            return@LaunchedEffect
-        }
-        if (normalized == lastLoadedSpreadsheetId) {
             return@LaunchedEffect
         }
         isLoadingTabs = true
@@ -418,6 +424,40 @@ fun SettingsScreen(
                     imageVector = Icons.Default.Share,
                     contentDescription = "Share spreadsheet link"
                 )
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag(TestTags.SETTINGS_SPREADSHEET_LINK_FIELD),
+                value = spreadsheetDraft,
+                onValueChange = { spreadsheetDraft = it },
+                label = { Text("Spreadsheet link or ID") },
+                singleLine = true
+            )
+            Button(
+                onClick = {
+                    val normalized = normalizeSpreadsheetIdInput(spreadsheetDraft)
+                    if (normalized == null) {
+                        status = "Enter a Google Sheets URL or spreadsheet ID, then tap Load."
+                        return@Button
+                    }
+                    pendingDisplayNameFromPicker = null
+                    spreadsheetId = normalized
+                    spreadsheetDraft = normalized
+                    lastAutoFilledSpreadsheetId = normalized
+                    persistFullConfig(selectedTabs)
+                    spreadsheetReloadNonce++
+                },
+                modifier = Modifier.testTag(TestTags.SETTINGS_LOAD_SPREADSHEET)
+            ) {
+                Text("Load")
             }
         }
         Spacer(modifier = Modifier.height(8.dp))

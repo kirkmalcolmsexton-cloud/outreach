@@ -50,6 +50,8 @@ struct SpreadsheetRowInput: Equatable, Codable {
 
 struct AppConfig: Equatable, Codable {
     var spreadsheetId: String = ""
+    /// Spreadsheet URL (or canonical edit URL) for Settings UI persistence; API calls use `spreadsheetId` only.
+    var spreadsheetDisplayLink: String?
     var spreadsheetTitle: String?
     var selectedTabs: Set<String> = []
     var mapBriefCommentMode: String = "include_all"

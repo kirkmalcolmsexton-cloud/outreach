@@ -44,6 +44,13 @@ func extractSpreadsheetIdFromText(_ text: String) -> String? {
     return nil
 }
 
+/// Standard “open in browser” link for a spreadsheet id (use for Settings field so a full URL is shown after relaunch).
+func canonicalGoogleSheetsEditURL(forSpreadsheetId id: String) -> String {
+    let t = id.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !t.isEmpty else { return "" }
+    return "https://docs.google.com/spreadsheets/d/\(t)/edit"
+}
+
 func normalizeBriefComment(_ value: String?) -> String {
     let normalized = normalizeText(value)
     if normalized.isEmpty { return VisitOutcome.other.rawValue }
