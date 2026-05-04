@@ -16,6 +16,8 @@
 # Environment:
 #   OUTREACH_XCODE  — e.g. /Applications/Xcode.app
 #   OUTREACH_DERIVED_DATA — override DerivedData path (default: build/DerivedData under ios/)
+#   OUTREACH_RM_DERIVED_DATA=1 — rm -rf that DerivedData path before build|test|archive|clean (full rebuild; slower)
+#   OUTREACH_KEEP_DERIVED_DATA_ON_CLEAN=1 — do not delete DerivedData when action is clean (default: clean wipes it)
 #   OUTREACH_DESTINATION — full override for xcodebuild -destination (skips auto sim pick).
 #   OUTREACH_XCODEBUILD_RUN_FIRST_LAUNCH=1 — run xcodebuild -runFirstLaunch before build (one-time; fixes DVT/IDESimulator issues)
 #   OUTREACH_SKIP_SPM_RESOLVE=1 — skip -resolvePackageDependencies (not recommended; CLI needs this for Firebase/GoogleSignIn SPM)
@@ -102,7 +104,7 @@ Usage: $(basename "$0") [build|clean|test|archive]
   build   — xcodebuild build (default), Debug. Picks the first available iPhone Simulator (simctl) when
             OUTREACH_DESTINATION is unset — avoids generic/platform=iOS Simulator when no runtime resolves.
             Override: OUTREACH_DESTINATION=… (e.g. generic/platform=iOS after installing the iOS platform).
-  clean   — xcodebuild clean (same destination resolution as build)
+  clean   — deletes this repo’s DerivedData (${DD}) then xcodebuild clean (override: OUTREACH_KEEP_DERIVED_DATA_ON_CLEAN=1)
   test    — xcodebuild test (same Simulator resolution as build; passes -parallel-testing-enabled NO for stable UI tests)
   archive — xcodebuild archive (generic iOS device; requires iOS device platform in Xcode)
 
@@ -166,6 +168,23 @@ outreach_maybe_setup_ios_secrets() {
 outreach_maybe_setup_ios_secrets
 
 cd "${IOS_DIR}/Outreach"
+
+# Incremental builds keep DerivedData for speed. `clean` removes it by default so stale ModuleCache / PCM paths
+# do not linger (see OUTREACH_KEEP_DERIVED_DATA_ON_CLEAN). Use OUTREACH_RM_DERIVED_DATA=1 to force a full wipe
+# before any action when debugging toolchain noise or corrupted caches.
+outreach_maybe_remove_derived_data() {
+  if [[ "${OUTREACH_RM_DERIVED_DATA:-}" == "1" ]]; then
+    echo "build-ios: removing DerivedData (OUTREACH_RM_DERIVED_DATA=1): ${DD}" >&2
+    rm -rf "${DD}"
+    return 0
+  fi
+  if [[ "${ACTION}" == "clean" ]] && [[ "${OUTREACH_KEEP_DERIVED_DATA_ON_CLEAN:-}" != "1" ]]; then
+    echo "build-ios: removing DerivedData for clean: ${DD}" >&2
+    rm -rf "${DD}"
+  fi
+}
+
+outreach_maybe_remove_derived_data
 mkdir -p "${DD}"
 
 if [[ "${OUTREACH_XCODEBUILD_RUN_FIRST_LAUNCH:-}" == "1" ]]; then

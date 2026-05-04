@@ -119,6 +119,7 @@ struct VisitLogView: View {
             .padding()
             .accessibilityIdentifier(UiTestTags.visitsRoot)
         }
+        .scrollDismissesKeyboard(.interactively)
         .onAppear {
             syncNotesFromHousehold()
             Task { await loadPresets() }

@@ -58,6 +58,8 @@ Read in order of **policy → commands → code → scenarios**: **[`testing-pro
 - **[`release-process.md`](docs/release-process.md)** — GitFlow, versioning, keystore/GitHub secrets, bundle workflow, Play uploads
 - **[`release-checklist.md`](docs/release-checklist.md)** — functional QA before ship
 
+**Apple App Store (iOS):** App Store Connect **SKU** for Outreach is **`6CF28127-DB69-47CD-BCB5-3B0EB06DA06E`**. The customer-facing name on the store is **“Tabligh Outreach”** (see **[`docs/ios-app-store.md`](docs/ios-app-store.md)** for TestFlight and submission notes).
+
 ### CI and GitHub
 
 - **[`ci-cd.md`](docs/ci-cd.md)** — workflow/job reference, **`gh`** CLI, merge gates, Gradle parity with Actions

@@ -1,0 +1,55 @@
+San Antonio demo — load into Google Sheets for Outreach
+=========================================================
+
+ZIP tabs used: 78209 and 78212 (worksheet names must match exactly).
+
+Populate an existing spreadsheet (Apps Script — runs as your Google account)
+-----------------------------------------------------------------------------
+1. Open your spreadsheet in the browser (desktop Chrome or Safari usually works best).
+2. Extensions → Apps Script.
+3. Delete any boilerplate, paste the full contents of **apps_script_populate_demo.js**
+   from this folder.
+4. (Recommended) Project Settings (gear) → enable **Show "appsscript.json" manifest file in editor**.
+   Open **appsscript.json**, replace its contents with **apps_script_appsscript.json** from this
+   folder (narrow permission: only this spreadsheet). Save.
+5. Save the script (disk icon), choose function **populateOutreachDemo**, click **Run** ▶.
+6. When Google asks for access: complete the sign-in flow in the window or tab it opens.
+
+If you see "Authorization required" but no button or Google login
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+- **Pop-up blocker:** The consent screen opens in a **new tab or window**. Allow pop-ups and
+  redirects for **script.google.com** and **accounts.google.com** (Safari: disable cross-site
+  tracking prevention for this session, or use Chrome). Run again after allowing pop-ups.
+- **Execution panel:** At the bottom, open **Execution log**. If there is a **Review permissions**
+  link, click it.
+- **Unverified app:** You may see **Advanced** → **Go to … (unsafe)** — that is normal for a
+  personal script; proceed to allow access to this spreadsheet only (when using the manifest above).
+- **Google Workspace school/work account:** An admin may block “Less secure” app authorization.
+  Use a **personal Google account** on a copy of the sheet (**File → Make a copy**), run the
+  script there, or skip Apps Script and use **File → Import** with the CSV files below.
+
+After success, reload the spreadsheet; you should see tabs **78209**, **78212**, and **keys**.
+
+Create new spreadsheet from CSVs (manual import)
+------------------------------------------------
+
+1. Create a blank Google Spreadsheet (e.g. title "Outreach SA demo").
+
+2. Rename Sheet1 to: 78209
+   File → Import → Upload sa-demo-78209.csv
+   Import location: Replace current sheet (or Insert new sheet(s) then replace that sheet's content by pasting from the CSV).
+
+   Simpler manual path: Open sa-demo-78209.csv in a text editor or Excel, copy all cells, paste into tab 78209 starting at A1.
+
+3. Add a second worksheet named exactly: 78212
+   Paste contents of sa-demo-78212.csv starting at A1.
+
+4. Optional brief-comment presets: Add a worksheet named keys (all lowercase).
+   Paste sa-demo-keys.csv starting at A1 (header row must include Name).
+
+5. In Outreach → Settings: paste the spreadsheet URL or ID, select tabs 78209 and 78212, Validate, then Sync.
+
+Notes: Rows are synthetic demo data. Full addresses include city, state, and ZIP for geocoding on sync.
+
+CLI alternative (Python OAuth): from repo **scripts/** see **populate_demo_spreadsheet.py**
+(requires a virtualenv with google-api-python-client; first run opens a browser to sign in).

@@ -25,6 +25,16 @@ android/keystore.properties
 *.p12
 *.pem
 
+# One-off Sheets populate script (OAuth token + venv)
+scripts/token.populate_sheets.json
+scripts/.venv-populate-sheets/
+
 # Local IDE/system artifacts
 .DS_Store
 .idea/
+
+# Xcode per-user state (shared schemes live under xcshareddata)
+**/xcuserdata/
+
+# Python
+**/__pycache__/

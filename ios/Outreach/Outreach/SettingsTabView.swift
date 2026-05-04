@@ -67,26 +67,36 @@ struct SettingsTabView: View {
                         .foregroundStyle(.tertiary)
                         .accessibilityIdentifier(UiTestTags.settingsAppVersion)
                 }
+                // Icon-only buttons in `Form` sections can merge hit-testing regions; use `.plain` + fixed frames so each tap maps to one action.
                 HStack(spacing: 20) {
                     Button {
                         showFileImporter = true
                     } label: {
                         Image(systemName: "folder")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier(UiTestTags.settingsPickSpreadsheet)
                     Button {
                         Task { await validateSchema() }
                     } label: {
                         Image(systemName: "checkmark.circle")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier(UiTestTags.settingsValidate)
                     Button {
                         Task { await saveAndSync() }
                     } label: {
                         Image(systemName: "arrow.triangle.2.circlepath")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier(UiTestTags.settingsSync)
-                    Spacer()
+                    Spacer(minLength: 0)
                 }
                 HStack(alignment: .center, spacing: 12) {
                     TextField("Spreadsheet link or ID", text: $sheetId)
@@ -202,6 +212,7 @@ struct SettingsTabView: View {
                     .accessibilityLabel("Version \(appVersionLabel)")
             }
         }
+        .scrollDismissesKeyboard(.interactively)
         .accessibilityIdentifier(UiTestTags.settingsRoot)
         .fileImporter(
             isPresented: $showFileImporter,

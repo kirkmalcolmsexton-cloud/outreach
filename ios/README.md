@@ -4,6 +4,7 @@ Native **Swift / SwiftUI** app matching the Android product: Google sign-in, Goo
 
 - **Xcode project:** [Outreach/Outreach.xcodeproj](Outreach/Outreach.xcodeproj) — open in Xcode 15+ on macOS.
 - **Docs:** [docs/ios-architecture.md](../docs/ios-architecture.md), [docs/ios-onboarding.md](../docs/ios-onboarding.md), [docs/ios-app-store.md](../docs/ios-app-store.md) (TestFlight and App Store), [docs/ios-ui-testing.md](../docs/ios-ui-testing.md) (XCUITest, Simulator and device).
+- **App Store Connect:** Apple App **SKU** for Outreach is **`6CF28127-DB69-47CD-BCB5-3B0EB06DA06E`**. The listing name on the App Store is **“Tabligh Outreach”**.
 - **Config:** add **`Outreach/Outreach/GoogleService-Info.plist`** from Firebase, or use **`ios/scripts/setup-secrets.sh`** with consolidated secrets (gitignored; see [GoogleService-Info.plist.example](GoogleService-Info.plist.example) and [secrets/README.md](../secrets/README.md)).
 - **OAuth:** [docs/google-oauth-checklist.md](../docs/google-oauth-checklist.md) (section 7, iOS client + URL scheme). When **`GoogleService-Info.plist`** is present, an Xcode **Run Script** phase runs **[`scripts/patch-app-info-google-oauth.py`](scripts/patch-app-info-google-oauth.py)** so **`GIDClientID`** and the **Google URL scheme** (`REVERSED_CLIENT_ID`) in the **built** app’s `Info.plist` match that file (source `Info.plist` may keep placeholders).
 

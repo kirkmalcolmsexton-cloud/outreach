@@ -72,7 +72,7 @@ final class OutreachRepository: ObservableObject {
         let cfg = configStore.config
         if cfg.spreadsheetId.isEmpty || cfg.selectedTabs.isEmpty { return }
         let existing = try fetchAllHouseholds()
-        var existingById = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
+        let existingById = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
         var geocodeCache = [String: (Double, Double)?]()
         var entities: [HouseholdEntry] = []
         for tab in cfg.selectedTabs {

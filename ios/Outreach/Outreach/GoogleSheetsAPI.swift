@@ -9,7 +9,7 @@ struct GoogleApiEndpoints: Sendable {
     var sheetsBaseUrl: String = "https://sheets.googleapis.com"
 }
 
-enum SheetsRequestResult: Sendable {
+enum SheetsRequestResult: @unchecked Sendable {
     case success([String: Any]?)
     case failure(code: Int?, message: String)
 }

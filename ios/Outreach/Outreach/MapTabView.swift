@@ -84,6 +84,7 @@ struct MapTabView: View {
                     TextField("Neighborhood", text: $addNeighborhood)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add person")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -93,6 +94,18 @@ struct MapTabView: View {
                     Button("Add") {
                         Task { await confirmAddPerson() }
                     }
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil,
+                            from: nil,
+                            for: nil
+                        )
+                    }
+                    .fontWeight(.semibold)
                 }
             }
         }
@@ -330,6 +343,7 @@ struct MapTabView: View {
                 }
             }
             .listStyle(.plain)
+            .scrollDismissesKeyboard(.interactively)
             mapActionFabColumn(selectedHousehold: selectedHousehold)
         }
         .accessibilityElement(children: .contain)
@@ -448,9 +462,12 @@ struct MapTabView: View {
         position: Binding<MapCameraPosition>,
         routeCoordinates: [CLLocationCoordinate2D]
     ) -> some View {
-        let coordRecords = records.compactMap { h -> (HouseholdRecord, CLLocationCoordinate2D)? in
+        let coordRecords = records.compactMap { h -> MapCoordPin? in
             guard let la = h.latitude, let lo = h.longitude else { return nil }
-            return (h, CLLocationCoordinate2D(latitude: la, longitude: lo))
+            return MapCoordPin(
+                record: h,
+                coordinate: CLLocationCoordinate2D(latitude: la, longitude: lo)
+            )
         }
         ZStack {
             Map(position: position) {
@@ -458,7 +475,10 @@ struct MapTabView: View {
                     MapPolyline(coordinates: routeCoordinates)
                         .stroke(.blue, lineWidth: 5)
                 }
-                ForEach(coordRecords, id: \.0.id) { h, c in
+                // Identity must include brief / last visited or MapKit annotation views won't redraw after a visit log update.
+                ForEach(coordRecords) { pin in
+                    let h = pin.record
+                    let c = pin.coordinate
                     Annotation(h.name, coordinate: c) {
                         let selected = selectedHouseholdId == h.id
                         Button {
@@ -494,12 +514,26 @@ struct MapTabView: View {
     }
 
     private func briefColor(_ brief: String) -> Color {
-        switch brief {
-        case "not_home": return .gray
-        case "receptive": return .green
-        case "left_message": return .orange
-        case "do_not_visit": return .red
+        let key = normalizeBriefComment(brief)
+        switch key {
+        case VisitOutcome.notHome.rawValue: return .gray
+        case VisitOutcome.leftMessage.rawValue: return .orange
+        case VisitOutcome.receptive.rawValue: return .green
+        case VisitOutcome.doNotVisit.rawValue: return .red
+        case VisitOutcome.moved.rawValue: return .cyan
+        case VisitOutcome.dawatSaath.rawValue: return .purple
+        case VisitOutcome.other.rawValue: return .blue
         default: return .blue
         }
+    }
+}
+
+/// Stable row identity for `Map` annotations — must change when visit outcome / date changes so pins repaint.
+private struct MapCoordPin: Identifiable {
+    let record: HouseholdRecord
+    let coordinate: CLLocationCoordinate2D
+
+    var id: String {
+        "\(record.id)|\(record.briefComment)|\(record.lastVisited ?? "")"
     }
 }

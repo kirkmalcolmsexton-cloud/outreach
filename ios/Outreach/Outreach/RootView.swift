@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 import FirebaseAuth
 
 struct RootView: View {
@@ -160,9 +161,24 @@ struct RootView: View {
                     }
                     .accessibilityIdentifier(UiTestTags.profileButton)
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        dismissKeyboardForTabSwitch()
+                    }
+                    .fontWeight(.semibold)
+                }
             }
             .accessibilityIdentifier(UiTestTags.appRoot)
+            .onChange(of: selectedTab) { _, _ in
+                dismissKeyboardForTabSwitch()
+            }
         }
+    }
+
+    /// Resign first responder so the tab bar works while a `TextField` has focus (keyboard would otherwise eat taps).
+    private func dismissKeyboardForTabSwitch() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     @MainActor
