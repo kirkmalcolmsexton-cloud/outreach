@@ -45,7 +45,8 @@ Keep this information **out of git** (password manager or internal doc). Replace
 | Upload keystore file | (path or escrow reference) |
 | Keystore passphrase | |
 | Play App Signing: app signing key held by | Google / note |
-| GitHub Actions secrets (Phase 2 CD) | See **[`github-actions-secrets.md`](github-actions-secrets.md)** — **`android-release-build`** uses **`OUTREACH_SECRETS_PASSPHRASE`**; other workflows typically need only `GITHUB_TOKEN` |
+| GitHub Actions secrets (Phase 2 CD) | **`OUTREACH_SECRETS_PASSPHRASE`**, optional **`PLAY_STORE_SERVICE_ACCOUNT_JSON`** — see **[`github-actions-secrets.md`](github-actions-secrets.md)** |
+| Environment **`play-internal-release`** | Required reviewers before Play Internal deploy (**Settings → Environments**) |
 
 ## 5. After Phase 1 (Phase 2 — CI gates)
 

@@ -45,7 +45,7 @@ Consolidated JSON schema (Maps, Firebase, optional iOS plist, signing, optional 
 
 ### CI (release bundle)
 
-**[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** on **`release/**`** / **`hotfix/**`** or **`workflow_dispatch`**:
+**[`android-release.yml`](../.github/workflows/android-release.yml)** job **`bundle-release`** on **`release/**`** / **`hotfix/**`** push or **`workflow_dispatch`**:
 
 1. Reads **`OUTREACH_SECRETS_PASSPHRASE`** from GitHub.
 2. Runs **`build-release-bundle.sh`**: **`setup-secrets.sh`** (same as local) + export path for signing **`jq`**, then keystore and **`bundleRelease`**.
