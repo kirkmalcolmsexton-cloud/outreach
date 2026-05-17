@@ -32,6 +32,8 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import com.google.firebase.auth.FirebaseAuth
@@ -70,7 +72,9 @@ fun LoginGateScreen(onSignedIn: () -> Unit) {
     LaunchedEffect(session, hasRequiredScopes) {
         if (session && !hasRequiredScopes && !scopeConsentLaunched) {
             scopeConsentLaunched = true
-            viewModel.buildScopeConsentIntent(context)?.let { scopeLauncher.launch(it) }
+            viewModel.beginGoogleSignIn(context, includeScopes = true) { intent ->
+                intent?.let { scopeLauncher.launch(it) }
+            }
         }
     }
 
@@ -99,20 +103,15 @@ fun LoginGateScreen(onSignedIn: () -> Unit) {
         Button(
             onClick = {
                 scopeConsentLaunched = false
-                val intent = if (session && !hasRequiredScopes) {
-                    viewModel.buildScopeConsentIntent(context)
-                } else {
-                    viewModel.buildGoogleSignInIntent(context)
-                }
-                if (intent != null) {
-                    if (session && !hasRequiredScopes) {
+                val needsScopes = session && !hasRequiredScopes
+                viewModel.beginGoogleSignIn(context, includeScopes = needsScopes) { intent ->
+                    if (intent == null) return@beginGoogleSignIn
+                    if (needsScopes) {
                         scopeConsentLaunched = true
                         scopeLauncher.launch(intent)
                     } else {
                         signInLauncher.launch(intent)
                     }
-                } else {
-                    viewModel.setMissingWebClientIdError()
                 }
             }
         ) {
@@ -141,31 +140,31 @@ class AuthViewModel(
     val error: StateFlow<String> = _error.asStateFlow()
 
     /**
-     * Sign-in only (email + ID token). Sheets/Drive scopes are requested in a second step via
-     * [buildScopeConsentIntent] so SignInHubActivity is less likely to hang on slow devices when
-     * opening the combined account + scope UI (see Google issue 178183308).
+     * Clears cached Google Sign-In state, then returns the sign-in [Intent].
+     * Stale sessions from prior app versions (different scopes/options) often surface as
+     * DEVELOPER_ERROR (10) on older Play services builds.
      */
-    fun buildGoogleSignInIntent(context: Context): Intent? {
-        return buildGoogleSignInClientIntent(context, includeScopes = false)
-    }
-
-    /** Second-step consent for Sheets + Drive scopes after Google/Firebase account exists. */
-    fun buildScopeConsentIntent(context: Context): Intent? {
-        return buildGoogleSignInClientIntent(context, includeScopes = true)
-    }
-
-    private fun buildGoogleSignInClientIntent(context: Context, includeScopes: Boolean): Intent? {
+    fun beginGoogleSignIn(
+        context: Context,
+        includeScopes: Boolean,
+        onIntent: (Intent?) -> Unit,
+    ) {
+        val playServicesError = checkGooglePlayServices(context)
+        if (playServicesError != null) {
+            setAuthError(context, playServicesError)
+            onIntent(null)
+            return
+        }
         val webClientId = resolveWebClientId(context)
         if (webClientId.isBlank()) {
-            return null
+            setMissingWebClientIdError(context)
+            onIntent(null)
+            return
         }
-        val builder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestEmail()
-            .requestIdToken(webClientId)
-        if (includeScopes) {
-            builder.requestScopes(requiredScopes.first(), *requiredScopes.drop(1).toTypedArray())
+        val client = GoogleSignIn.getClient(context, buildGoogleSignInOptions(webClientId, includeScopes))
+        client.signOut().addOnCompleteListener {
+            onIntent(client.signInIntent)
         }
-        return GoogleSignIn.getClient(context, builder.build()).signInIntent
     }
 
     fun hasRequiredGoogleScopes(context: Context): Boolean {
@@ -173,16 +172,18 @@ class AuthViewModel(
         return GoogleSignIn.hasPermissions(account, *requiredScopes)
     }
 
-    fun setMissingWebClientIdError() {
-        _error.value =
+    fun setMissingWebClientIdError(context: Context) {
+        setAuthError(
+            context,
             "Missing OAuth Web Client ID. In Firebase: Authentication → Sign-in method → Google → copy " +
                 "the Web client ID. Replace app/google-services.json with a downloaded file " +
                 "that includes oauth_client entries."
+        )
     }
 
     fun onGoogleSignInActivityResult(context: Context, resultCode: Int, data: Intent?) {
         resolveGoogleSignInTask(context, resultCode, data) { account ->
-            signInToFirebase(account)
+            signInToFirebase(context, account)
         }
     }
 
@@ -192,8 +193,10 @@ class AuthViewModel(
                 _session.value = auth.currentUser != null
                 _error.value = ""
             } else {
-                _error.value =
+                setAuthError(
+                    context,
                     "Drive and Sheets permissions are required. Tap Grant Drive & Sheets access to continue."
+                )
             }
         }
     }
@@ -213,13 +216,13 @@ class AuthViewModel(
             onAccount(task.getResult(ApiException::class.java))
         } catch (e: ApiException) {
             logAuth("GoogleSignIn.getSignedInAccountFromIntent failed", e)
-            _error.value = formatGoogleSignInFailure(e)
+            setAuthError(context, formatGoogleSignInFailure(e))
         } catch (e: Exception) {
             logAuth("GoogleSignIn.getSignedInAccountFromIntent failed", e)
             if (resultCode == Activity.RESULT_CANCELED) {
                 setSignInDidNotCompleteMessage(context, data)
             } else {
-                _error.value = "Google sign-in failed: ${e.message ?: e.javaClass.simpleName}"
+                setAuthError(context, "Google sign-in failed: ${e.message ?: e.javaClass.simpleName}")
             }
         }
     }
@@ -235,40 +238,67 @@ class AuthViewModel(
         val signingSha1 = resolveAppSigningSha1(context)
         val debugSuffix =
             " Debug: package=$packageName, sha1=${if (signingSha1.isBlank()) "unknown" else signingSha1}, firebaseUser=$hasFirebaseUser, googleAccount=$hasGoogleAccount, extrasKeys=${if (extrasKeys.isBlank()) "none" else extrasKeys}, status=${if (googleSignInStatus.isBlank()) "none" else googleSignInStatus}."
-        _error.value = if (developerError) {
-            "Google sign-in did not finish (Sign-In reported DEVELOPER_ERROR). If SHA-1 is already registered " +
-                "in Firebase and Google Cloud, this is often a false alarm from the combined account + scope screen " +
-                "on slow devices — update the app (two-step sign-in), tap Continue again, and ensure Google Play " +
-                "services is up to date. Otherwise verify Web client ID in google-services.json matches Firebase " +
-                "Auth → Google → Web client ID for $packageName.$debugSuffix"
-        } else {
-            "Sign-in did not finish (back/cancel or Google blocked the app). If you saw a Google " +
-                "verification/testing message, add this Google account under Test users for the Cloud " +
-                "project that owns your Web client ID.$debugSuffix"
-        }
+        setAuthError(
+            context,
+            if (developerError) {
+                "Google sign-in did not finish (Sign-In reported DEVELOPER_ERROR). If SHA-1 is already registered " +
+                    "in Firebase and Google Cloud, this is often a false alarm from the combined account + scope screen " +
+                    "on slow devices — update the app (two-step sign-in), tap Continue again, and ensure Google Play " +
+                    "services is up to date. Otherwise verify Web client ID in google-services.json matches Firebase " +
+                    "Auth → Google → Web client ID for $packageName.$debugSuffix"
+            } else {
+                "Sign-in did not finish (back/cancel or Google blocked the app). If you saw a Google " +
+                    "verification/testing message, add this Google account under Test users for the Cloud " +
+                    "project that owns your Web client ID.$debugSuffix"
+            }
+        )
     }
 
-    fun setSignInFailedMessage(message: String) {
-        _error.value = message
+    fun setSignInFailedMessage(context: Context, message: String) {
+        setAuthError(context, message)
     }
 
     private fun formatGoogleSignInFailure(e: Exception): String {
         val api = e as? ApiException ?: return "Google sign-in failed: ${e.message ?: e.javaClass.simpleName}"
         val code = api.statusCode
         if (code == GoogleSignInStatusCodes.SIGN_IN_CANCELLED) {
-            return "Sign-in cancelled."
+            return "Sign-in cancelled"
         }
         val label = runCatching { GoogleSignInStatusCodes.getStatusCodeString(code) }.getOrElse { "unknown" }
         val extra = when (code) {
             com.google.android.gms.common.ConnectionResult.DEVELOPER_ERROR ->
-                " If SHA-1 is already in Firebase and Google Cloud, retry after updating the app; otherwise register " +
-                    "every signing cert you ship (debug, CI upload, Play App signing) — docs/google-oauth-checklist.md."
+                " On older phones: update Google Play services in the Play Store, then tap Continue again. " +
+                    "If it persists, verify the Web client ID in google-services.json matches Firebase Auth → Google. " +
+                    "Otherwise register every signing cert (debug, CI upload, Play App signing) — docs/google-oauth-checklist.md."
             GoogleSignInStatusCodes.SIGN_IN_FAILED ->
                 " If Google blocked access (verification / testing), add this Google account under Test users " +
                     "for the same Cloud project as your Web client ID, or finish verification."
             else -> ""
         }
         return "Google sign-in failed ($label, code $code).$extra"
+    }
+
+    private fun buildGoogleSignInOptions(webClientId: String, includeScopes: Boolean): GoogleSignInOptions {
+        val builder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestIdToken(webClientId)
+        if (includeScopes) {
+            builder.requestScopes(requiredScopes.first(), *requiredScopes.drop(1).toTypedArray())
+        }
+        return builder.build()
+    }
+
+    private fun checkGooglePlayServices(context: Context): String? {
+        val availability = GoogleApiAvailability.getInstance()
+        val code = availability.isGooglePlayServicesAvailable(context)
+        if (code == ConnectionResult.SUCCESS) return null
+        val reason = availability.getErrorString(code)
+        return if (availability.isUserResolvableError(code)) {
+            "Google Play services must be updated before sign-in ($reason). Open the Play Store, update " +
+                "Google Play services, then try again."
+        } else {
+            "Google Play services is unavailable ($reason). Google sign-in requires an up-to-date Play services app."
+        }
     }
 
     private fun formatFirebaseAuthFailure(e: Exception): String {
@@ -311,10 +341,10 @@ class AuthViewModel(
         }
     }
 
-    private fun signInToFirebase(account: GoogleSignInAccount) {
+    private fun signInToFirebase(context: Context, account: GoogleSignInAccount) {
         val token = account.idToken
         if (token.isNullOrBlank()) {
-            _error.value = "Missing Google ID token. Verify web client ID setup."
+            setAuthError(context, "Missing Google ID token. Verify web client ID setup.")
             return
         }
         val credential = GoogleAuthProvider.getCredential(token, null)
@@ -324,7 +354,7 @@ class AuthViewModel(
                 _error.value = ""
             }.addOnFailureListener { e ->
                 logAuth("Firebase signInWithCredential failed", e)
-                _error.value = formatFirebaseAuthFailure(e)
+                setAuthError(context, formatFirebaseAuthFailure(e))
             }
         }
     }
@@ -358,6 +388,28 @@ class AuthViewModel(
             val digest = MessageDigest.getInstance("SHA-1").digest(cert)
             digest.joinToString(":") { b -> "%02X".format(b) }
         }.getOrDefault("")
+    }
+
+    private fun setAuthError(context: Context, message: String) {
+        _error.value = authError(context, message)
+    }
+
+    /** Appends device/OS and build version to every user-visible auth error. */
+    private fun authError(context: Context, message: String): String {
+        val debugSuffix = if (BuildConfig.DEBUG) " (debug)" else ""
+        val body = message.trimEnd('.', ' ')
+        return "$body. ${deviceAndOsDetails(context)}. Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})$debugSuffix."
+    }
+
+    private fun deviceAndOsDetails(context: Context): String {
+        val gmsVersion = runCatching {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo("com.google.android.gms", 0).versionName
+        }.getOrNull() ?: "unknown"
+        val manufacturer = Build.MANUFACTURER.trim().ifEmpty { "unknown" }
+        val model = Build.MODEL.trim().ifEmpty { "unknown" }
+        return "Device: $manufacturer $model; Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}); " +
+            "Play services $gmsVersion"
     }
 
     private companion object {
