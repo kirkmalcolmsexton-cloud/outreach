@@ -19,7 +19,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -54,13 +56,21 @@ fun LoginGateScreen(onSignedIn: () -> Unit) {
             onSignedIn()
         }
     }
-    val launcher = rememberLauncherForActivityResult(
+    var scopeConsentLaunched by remember { mutableStateOf(false) }
+    val signInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        when (result.resultCode) {
-            Activity.RESULT_OK -> viewModel.onGoogleSignInIntentResult(context, result.data)
-            Activity.RESULT_CANCELED -> viewModel.setSignInDidNotCompleteMessage(context, result.data)
-            else -> viewModel.setSignInFailedMessage("Unexpected result (${result.resultCode}).")
+        viewModel.onGoogleSignInActivityResult(context, result.resultCode, result.data)
+    }
+    val scopeLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        viewModel.onGoogleScopeActivityResult(context, result.resultCode, result.data)
+    }
+    LaunchedEffect(session, hasRequiredScopes) {
+        if (session && !hasRequiredScopes && !scopeConsentLaunched) {
+            scopeConsentLaunched = true
+            viewModel.buildScopeConsentIntent(context)?.let { scopeLauncher.launch(it) }
         }
     }
 
@@ -88,15 +98,31 @@ fun LoginGateScreen(onSignedIn: () -> Unit) {
         Spacer(modifier = Modifier.height(8.dp))
         Button(
             onClick = {
-                val intent = viewModel.buildGoogleSignInIntent(context)
+                scopeConsentLaunched = false
+                val intent = if (session && !hasRequiredScopes) {
+                    viewModel.buildScopeConsentIntent(context)
+                } else {
+                    viewModel.buildGoogleSignInIntent(context)
+                }
                 if (intent != null) {
-                    launcher.launch(intent)
+                    if (session && !hasRequiredScopes) {
+                        scopeConsentLaunched = true
+                        scopeLauncher.launch(intent)
+                    } else {
+                        signInLauncher.launch(intent)
+                    }
                 } else {
                     viewModel.setMissingWebClientIdError()
                 }
             }
         ) {
-            Text("Continue with Google")
+            Text(
+                if (session && !hasRequiredScopes) {
+                    "Grant Drive & Sheets access"
+                } else {
+                    "Continue with Google"
+                }
+            )
         }
     }
 }
@@ -114,18 +140,32 @@ class AuthViewModel(
     private val _error = MutableStateFlow("")
     val error: StateFlow<String> = _error.asStateFlow()
 
-    /** @return null if the Web client ID is missing — calling [GoogleSignInOptions.Builder.requestIdToken] with a blank id can crash Play services. */
+    /**
+     * Sign-in only (email + ID token). Sheets/Drive scopes are requested in a second step via
+     * [buildScopeConsentIntent] so SignInHubActivity is less likely to hang on slow devices when
+     * opening the combined account + scope UI (see Google issue 178183308).
+     */
     fun buildGoogleSignInIntent(context: Context): Intent? {
+        return buildGoogleSignInClientIntent(context, includeScopes = false)
+    }
+
+    /** Second-step consent for Sheets + Drive scopes after Google/Firebase account exists. */
+    fun buildScopeConsentIntent(context: Context): Intent? {
+        return buildGoogleSignInClientIntent(context, includeScopes = true)
+    }
+
+    private fun buildGoogleSignInClientIntent(context: Context, includeScopes: Boolean): Intent? {
         val webClientId = resolveWebClientId(context)
         if (webClientId.isBlank()) {
             return null
         }
-        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+        val builder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
             .requestIdToken(webClientId)
-            .requestScopes(requiredScopes.first(), *requiredScopes.drop(1).toTypedArray())
-            .build()
-        return GoogleSignIn.getClient(context, options).signInIntent
+        if (includeScopes) {
+            builder.requestScopes(requiredScopes.first(), *requiredScopes.drop(1).toTypedArray())
+        }
+        return GoogleSignIn.getClient(context, builder.build()).signInIntent
     }
 
     fun hasRequiredGoogleScopes(context: Context): Boolean {
@@ -140,13 +180,47 @@ class AuthViewModel(
                 "that includes oauth_client entries."
     }
 
-    fun onGoogleSignInIntentResult(context: Context, data: Intent?) {
-        val task = GoogleSignIn.getSignedInAccountFromIntent(data)
-        task.addOnSuccessListener { account ->
+    fun onGoogleSignInActivityResult(context: Context, resultCode: Int, data: Intent?) {
+        resolveGoogleSignInTask(context, resultCode, data) { account ->
             signInToFirebase(account)
-        }.addOnFailureListener { e ->
+        }
+    }
+
+    fun onGoogleScopeActivityResult(context: Context, resultCode: Int, data: Intent?) {
+        resolveGoogleSignInTask(context, resultCode, data) { account ->
+            if (GoogleSignIn.hasPermissions(account, *requiredScopes)) {
+                _session.value = auth.currentUser != null
+                _error.value = ""
+            } else {
+                _error.value =
+                    "Drive and Sheets permissions are required. Tap Grant Drive & Sheets access to continue."
+            }
+        }
+    }
+
+    /**
+     * Always parse the result [Intent] — Google Sign-In can return [Activity.RESULT_CANCELED] while
+     * still encoding a real [ApiException] (for example DEVELOPER_ERROR) in the task.
+     */
+    private fun resolveGoogleSignInTask(
+        context: Context,
+        resultCode: Int,
+        data: Intent?,
+        onAccount: (GoogleSignInAccount) -> Unit,
+    ) {
+        val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+        try {
+            onAccount(task.getResult(ApiException::class.java))
+        } catch (e: ApiException) {
             logAuth("GoogleSignIn.getSignedInAccountFromIntent failed", e)
             _error.value = formatGoogleSignInFailure(e)
+        } catch (e: Exception) {
+            logAuth("GoogleSignIn.getSignedInAccountFromIntent failed", e)
+            if (resultCode == Activity.RESULT_CANCELED) {
+                setSignInDidNotCompleteMessage(context, data)
+            } else {
+                _error.value = "Google sign-in failed: ${e.message ?: e.javaClass.simpleName}"
+            }
         }
     }
 
@@ -162,11 +236,11 @@ class AuthViewModel(
         val debugSuffix =
             " Debug: package=$packageName, sha1=${if (signingSha1.isBlank()) "unknown" else signingSha1}, firebaseUser=$hasFirebaseUser, googleAccount=$hasGoogleAccount, extrasKeys=${if (extrasKeys.isBlank()) "none" else extrasKeys}, status=${if (googleSignInStatus.isBlank()) "none" else googleSignInStatus}."
         _error.value = if (developerError) {
-            "Google sign-in failed with DEVELOPER_ERROR (OAuth SHA-1 / package mismatch). Register the SHA-1 below in " +
-                "Firebase → Project settings → Your Android app and in Google Cloud → Credentials → Android OAuth client " +
-                "for $packageName. Play Store installs need the App signing key SHA-1 from Play Console (Setup → App signing), " +
-                "not only your PC debug/upload keys. GitHub-built APKs/AABs need the CI upload keystore SHA-1 if it differs " +
-                "from your local machine.$debugSuffix"
+            "Google sign-in did not finish (Sign-In reported DEVELOPER_ERROR). If SHA-1 is already registered " +
+                "in Firebase and Google Cloud, this is often a false alarm from the combined account + scope screen " +
+                "on slow devices — update the app (two-step sign-in), tap Continue again, and ensure Google Play " +
+                "services is up to date. Otherwise verify Web client ID in google-services.json matches Firebase " +
+                "Auth → Google → Web client ID for $packageName.$debugSuffix"
         } else {
             "Sign-in did not finish (back/cancel or Google blocked the app). If you saw a Google " +
                 "verification/testing message, add this Google account under Test users for the Cloud " +
@@ -187,8 +261,8 @@ class AuthViewModel(
         val label = runCatching { GoogleSignInStatusCodes.getStatusCodeString(code) }.getOrElse { "unknown" }
         val extra = when (code) {
             com.google.android.gms.common.ConnectionResult.DEVELOPER_ERROR ->
-                " Register every signing certificate you ship with: PC debug/upload, CI upload keystore, and Play App Signing key " +
-                    "(Play Console); see docs/google-oauth-checklist.md."
+                " If SHA-1 is already in Firebase and Google Cloud, retry after updating the app; otherwise register " +
+                    "every signing cert you ship (debug, CI upload, Play App signing) — docs/google-oauth-checklist.md."
             GoogleSignInStatusCodes.SIGN_IN_FAILED ->
                 " If Google blocked access (verification / testing), add this Google account under Test users " +
                     "for the same Cloud project as your Web client ID, or finish verification."
@@ -272,8 +346,7 @@ class AuthViewModel(
                     context.packageName,
                     PackageManager.GET_SIGNING_CERTIFICATES
                 )
-                val info = pkgInfo.signingInfo
-                if (info != null && info.hasMultipleSigners()) info.apkContentsSigners else info?.signingCertificateHistory
+                pkgInfo.signingInfo?.apkContentsSigners
             } else {
                 @Suppress("DEPRECATION")
                 context.packageManager.getPackageInfo(
