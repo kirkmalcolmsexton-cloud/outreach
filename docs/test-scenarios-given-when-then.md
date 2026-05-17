@@ -4,6 +4,16 @@ This document catalogs **behavior** for each `androidTest` scenario in **Given /
 
 **Maintenance:** When you add or rename an `@Test`, update the matching block here so the catalog stays accurate.
 
+## iOS XCUITest mapping
+
+Run instructions, launch arguments, and identifier parity with Android are documented in [`ios-ui-testing.md`](ios-ui-testing.md). When you add an iOS UI test, extend this table.
+
+| Android scenario (below) | iOS XCTest |
+|----------------------------|------------|
+| Launch smoke (`AppShellTest#launchesMainActivity`) | `AppShellUITests.testLaunch_reachesMainShell` |
+| Bottom tab navigation (`AppShellAutomationTest#appShell_navigatesAcrossBottomTabs`) | `AppShellUITests.testTabNavigation_homeVisitsSettings` |
+| Forced signed-out shell / login surface | `LoginGateUITests.testSignedOut_showsLoginGate` (mock `signed_out` + `LOGIN_GATE`) |
+
 ---
 
 ## App shell / MainActivity

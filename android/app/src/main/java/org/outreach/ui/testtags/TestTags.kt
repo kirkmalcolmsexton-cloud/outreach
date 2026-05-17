@@ -36,6 +36,8 @@ object TestTags {
 
     const val SETTINGS_ROOT = "settings_root"
     const val SETTINGS_PICK_SPREADSHEET = "settings_pick_spreadsheet"
+    const val SETTINGS_SPREADSHEET_LINK_FIELD = "settings_spreadsheet_link_field"
+    const val SETTINGS_LOAD_SPREADSHEET = "settings_load_spreadsheet"
     const val SETTINGS_VALIDATE = "settings_validate"
     const val SETTINGS_SYNC = "settings_sync"
     const val SETTINGS_ZIP_SECTION = "settings_zip_section"

@@ -313,8 +313,8 @@ Use this when your team shares **`secrets/outreach-secrets.json.age`** and a pas
 5. From the **`outreach`** repo root (**parent** of **`android/`**), run:
 
    ```bash
-   chmod +x ./scripts/build-with-secrets-from-env.sh   # once
-   ./scripts/build-with-secrets-from-env.sh
+   chmod +x ./android/scripts/build-with-secrets-from-env.sh   # once
+   ./android/scripts/build-with-secrets-from-env.sh
    ```
 
    The script **errors** if **`~/etc/outreach.env`** is missing, if **`OUTREACH_SECRETS_PASSPHRASE`** is empty after sourcing it, or if decrypt fails (wrong passphrase or missing **`.age`**).

@@ -4,6 +4,8 @@ This app uses Android instrumentation tests with Compose test APIs.
 
 **Run tests from the terminal** (Gradle tasks, **`ANDROID_SERIAL`**, **`mock`/`real`**, scripts, troubleshooting): **[`docs/testing-guide.md`](testing-guide.md)**. This document focuses on **test code structure**, tags, and runtime configuration.
 
+**iOS (XCUITest)** — same scenario intent and tag strings, plus a **tag parity matrix** (which tags exist on which platform and what tests cover them): **[`docs/ios-ui-testing.md`](ios-ui-testing.md#tag-parity-matrix-android--ios)**.
+
 ## Run tests locally
 
 From `outreach/android`:

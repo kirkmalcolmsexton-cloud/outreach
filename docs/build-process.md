@@ -24,6 +24,10 @@ The app needs **`google-services.json`** under **`android/app/`** and Map keys i
 
 Full narrative, **`encrypt-secrets.sh`**, manual Firebase download, and **`~/etc/outreach.env`** one-shot builds live in **[`docs/developer-onboarding.md`](developer-onboarding.md)**. Repository secret names for Actions are in **[`docs/github-actions-secrets.md`](github-actions-secrets.md)**.
 
+### iOS (GoogleService-Info.plist)
+
+From the repo root, after the same **`secrets/outreach-secrets.json`** (or **`.age`**) contains **`google_service_info_plist_base64`** or **`google_service_info_plist`**, run **`bash ios/scripts/setup-secrets.sh`**. It writes **gitignored** **`ios/Outreach/Outreach/GoogleService-Info.plist`**. Command-line builds: **`bash ios/scripts/build.sh`** (see **`ios/scripts/build.sh -h`**). Details: **[`docs/ios-onboarding.md`](ios-onboarding.md)**.
+
 ## CI parity
 
 Android CI on GitHub runs **`android/scripts/build.sh` `ci` …** — same as locally from **`outreach/android`**: **`./scripts/build.sh` `ci` `verify`**, and for instrumentation **`ci` `build-instrumented-apks`** + **`ci` `connected-mock`** (see **[`ci-cd.md`](ci-cd.md)**). The **`build.sh`** `ci` subcommands replace **`app/google-services.json`** with the example and match CI **`MAPS_API_KEY`**. **Release** builds: **`./scripts/build.sh` `release-bundle`** (or **`build-release-bundle.sh`**).
@@ -32,9 +36,15 @@ See **[`docs/testing-process.md`](testing-process.md)** for when to add physical
 
 ## Release builds (AAB) and signing
 
-Release artifacts use **`bundleRelease`**. Locally, signing can use **`android/keystore.properties`** (gitignored); CI resolves **`ANDROID_UPLOAD_*`** Gradle env vars from **`secrets/outreach-secrets.json`** (**`android_upload_signing`**) plus **`secrets/upload-keystore.jks.age`**, or from legacy GitHub **`ANDROID_UPLOAD_*`** secrets (**[`github-actions-secrets.md`](github-actions-secrets.md)**).
+**Same behavior as GitHub Actions:** from the repo root, run **`OUTREACH_SECRETS_PASSPHRASE=… bash android/scripts/build.sh release-bundle`** (or **`android/scripts/build-release-bundle.sh`**). That runs **`setup-secrets.sh`**, decrypts **`secrets/upload-keystore.jks.age`**, exports **`ANDROID_UPLOAD_*`** for Gradle, then **`./gradlew bundleRelease`**.
 
-Authoritative steps for keystore custody, **`bundleRelease`**, and Play uploads: **[`docs/release-process.md`](release-process.md)**. Signing wiring is implemented in **`android/app/build.gradle.kts`**.
+**Secrets source:** CI always builds from committed **`secrets/outreach-secrets.json.age`**. Locally, **`setup-secrets`** prefers **`.age`** over plaintext when both exist — so edits to **`secrets/outreach-secrets.json`** alone do not match CI until you run **`bash scripts/encrypt-secrets.sh`** and commit the updated **`.age`**. The release-bundle script prints **warnings** when plaintext and **`.age`** disagree or when **`.age`** is missing.
+
+**Gradle-only** **`./gradlew bundleRelease`** from **`android/`** can use **`android/keystore.properties`** (gitignored) instead — convenient offline, but **not CI parity** unless that file references the **same** keystore file CI uses. When **`secrets/upload-keystore.jks.age`** exists, Gradle prints a reminder if **`keystore.properties`** is in use.
+
+CI resolves env vars from **`secrets/outreach-secrets.json`** (**`android_upload_signing`**) plus the decrypted keystore, or from legacy GitHub **`ANDROID_UPLOAD_*`** secrets (**[`github-actions-secrets.md`](github-actions-secrets.md)**).
+
+Authoritative steps for keystore custody and Play uploads: **[`docs/release-process.md`](release-process.md)**. Signing wiring is in **`android/app/build.gradle.kts`**.
 
 ## Related links
 

@@ -1,0 +1,24 @@
+# Outreach iOS
+
+Native **Swift / SwiftUI** app matching the Android product: Google sign-in, Google Sheets import, MapKit home (map and list), visit logging with offline queue, settings for spreadsheet and tabs, Firestore presence/activity (optional), and background refresh to flush pending work.
+
+- **Xcode project:** [Outreach/Outreach.xcodeproj](Outreach/Outreach.xcodeproj) — open in Xcode 15+ on macOS.
+- **Docs:** [docs/ios-architecture.md](../docs/ios-architecture.md), [docs/ios-onboarding.md](../docs/ios-onboarding.md), [docs/ios-app-store.md](../docs/ios-app-store.md) (TestFlight and App Store), [docs/ios-ui-testing.md](../docs/ios-ui-testing.md) (XCUITest, Simulator and device).
+- **App Store Connect:** Apple App **SKU** for Outreach is **`6CF28127-DB69-47CD-BCB5-3B0EB06DA06E`**. The listing name on the App Store is **“Tabligh Outreach”**.
+- **Config:** add **`Outreach/Outreach/GoogleService-Info.plist`** from Firebase, or use **`ios/scripts/setup-secrets.sh`** with consolidated secrets (gitignored; see [GoogleService-Info.plist.example](GoogleService-Info.plist.example) and [secrets/README.md](../secrets/README.md)).
+- **OAuth:** [docs/google-oauth-checklist.md](../docs/google-oauth-checklist.md) (section 7, iOS client + URL scheme). When **`GoogleService-Info.plist`** is present, an Xcode **Run Script** phase runs **[`scripts/patch-app-info-google-oauth.py`](scripts/patch-app-info-google-oauth.py)** so **`GIDClientID`** and the **Google URL scheme** (`REVERSED_CLIENT_ID`) in the **built** app’s `Info.plist` match that file (source `Info.plist` may keep placeholders).
+
+**Scripts (like `android/scripts/`):**
+
+| Script | Purpose |
+|--------|---------|
+| [scripts/setup-secrets.sh](scripts/setup-secrets.sh) | Writes **gitignored** `Outreach/Outreach/GoogleService-Info.plist` from the team **`outreach-secrets.json`** (or **`.age`**) when **`google_service_info_plist_base64`** or **`google_service_info_plist`** is set. Same file discovery as [android/scripts/setup-secrets.sh](../android/scripts/setup-secrets.sh). |
+| [scripts/patch-app-info-google-oauth.py](scripts/patch-app-info-google-oauth.py) | Invoked by Xcode after **Copy GoogleService-Info**; patches **`GIDClientID`** and **`CFBundleURLTypes`** in the app bundle `Info.plist` from **`CLIENT_ID`** / **`REVERSED_CLIENT_ID`** in `GoogleService-Info.plist`. Requires **Python 3** (macOS default). |
+| [scripts/simulator.sh](scripts/simulator.sh) | **iOS Simulator** (not an emulator): **`create`**, **`start`** (create + boot), **`boot`**, **`shutdown`**, **`destination`** (for **`OUTREACH_DESTINATION`**), **`list`**. Default device name **`Outreach iPhone 16`** (override **`OUTREACH_IOS_SIM_NAME`**). See **`simulator.sh --help`**. |
+| [scripts/resolve-outreach-ios-simulator-destination.sh](scripts/resolve-outreach-ios-simulator-destination.sh) | Prints **`platform=iOS Simulator,id=…`** for the default Outreach sim — same idea as **`android/scripts/resolve-outreach-emulator-serial.sh`**. |
+| [scripts/deploy-simulator.sh](scripts/deploy-simulator.sh) | **Simulator deploy:** boots the default Outreach sim (**`simulator.sh start`**), runs **`build.sh build`**, **`simctl install`**, **`simctl launch`** (`org.outreach.ios`). **`OUTREACH_DEPLOY_SKIP_BOOT=1`** if the device is already booted. See **`deploy-simulator.sh --help`**. |
+| [scripts/deploy-device.sh](scripts/deploy-device.sh) | **Physical iPhone deploy:** runs **`build.sh build`** to **`Debug-iphoneos`**, then **`xcrun devicectl device install app`** and **`process launch`**. Needs Xcode 15+, trusted device, **Developer Mode**, and **`OUTREACH_DEVELOPMENT_TEAM`** (or **`DEVELOPMENT_TEAM`**) for CLI signing because the committed project has no team. See **`deploy-device.sh --help`**. |
+| [scripts/build.sh](scripts/build.sh) | **`xcodebuild`**: `build`, `clean`, `test`, `archive`. Auto-picks first **iPhone** from **`simctl list devices available`** (concrete simulator `id`) when **`OUTREACH_DESTINATION`** is unset. **`test`** runs **`OutreachUITests`** with **`-parallel-testing-enabled NO`**. **`OUTREACH_XCODEBUILD_RUN_FIRST_LAUNCH=1`** for DVT issues. See **`build.sh -h`**. |
+| [scripts/run-ui-tests.sh](scripts/run-ui-tests.sh) | Convenience wrapper: boots default sim (unless **`OUTREACH_DEPLOY_SKIP_BOOT=1`**), sets **`OUTREACH_DESTINATION`**, then **`build.sh test`**. **`--device`** requires **`OUTREACH_DEVICE_UDID`** or **`OUTREACH_DESTINATION`**. |
+
+**Swift packages:** **`ios/scripts/build.sh`** runs **`xcodebuild -resolvePackageDependencies`** before building (Firebase, Google Sign-In). In Xcode you can use **File → Packages → Resolve** instead. The **Firebase iOS SDK** Swift package is **[https://github.com/firebase/firebase-ios-sdk](https://github.com/firebase/firebase-ios-sdk)**.

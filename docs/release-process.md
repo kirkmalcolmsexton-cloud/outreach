@@ -22,7 +22,7 @@ Use this checklist the first time you expect CI to produce a **signed** **`.aab`
 **Do:**
 
 1. Open [`android/app/build.gradle.kts`](../android/app/build.gradle.kts) and confirm **`signingConfigs`** / **`ANDROID_UPLOAD_*`** wiring exists for **`release`**.
-2. Open **[`.github/workflows/android-release-build.yml`](../.github/workflows/android-release-build.yml)** and confirm the job runs **`android/scripts/build-release-bundle.sh`** (same as local) with repository **`OUTREACH_SECRETS_PASSPHRASE`** and, for **legacy** signing, the four **`ANDROID_UPLOAD_*`** secrets.
+2. Open **[`.github/workflows/android-release-build.yml`](../.github/workflows/android-release-build.yml)** and confirm the job runs **`android/scripts/build.sh release-bundle`** (same as **`build-release-bundle.sh`** locally) with repository **`OUTREACH_SECRETS_PASSPHRASE`** and, for **legacy** signing, the four **`ANDROID_UPLOAD_*`** secrets.
 
 **Verify:** Merged on **`main`** / **`develop`** / your release branch per your team’s process.
 
@@ -30,7 +30,7 @@ Use this checklist the first time you expect CI to produce a **signed** **`.aab`
 
 ### Step 2 — Add `OUTREACH_SECRETS_PASSPHRASE` (one secret)
 
-**Goal:** CI can run **`build-release-bundle.sh`** (same **`setup-secrets.sh`** as local) and write **`google-services.json`** + **`MAPS_API_KEY_DEBUG` / `MAPS_API_KEY_RELEASE`** in **`local.properties`** before **`bundleRelease`**.
+**Goal:** CI can run **`android/scripts/build.sh release-bundle`** (same **`setup-secrets.sh`** as local) and write **`google-services.json`** + **`MAPS_API_KEY_DEBUG` / `MAPS_API_KEY_RELEASE`** in **`local.properties`** before **`bundleRelease`**.
 
 **Do:**
 
@@ -58,7 +58,7 @@ The workflow prefers **repo mode** when **`secrets/upload-keystore.jks.age`** ex
 1. **`cd`** to the repo root (same folder as **`android/`**).
 2. Install **JDK**, **`age`**, **`expect`**, **`jq`** (encrypt path / instructions).
 3. Run: **`OUTREACH_SIGNING_REPO_MODE=1`** **`bash android/scripts/create-upload-keystore-and-gh-secrets.sh`** (set **`OUTREACH_SECRETS_PASSPHRASE`** for non-interactive **`age -p`**, or use a TTY).  
-   **Or** if you already have a plaintext upload **`.jks`**: **`OUTREACH_SECRETS_PASSPHRASE=... bash android/scripts/encrypt-upload-keystore-age.sh`** (no path arguments — reads **`~/.config/outreach/upload-keystore.jks`** by default, writes **`secrets/upload-keystore.jks.age`**; set **`OUTREACH_UPLOAD_KEYSTORE_PATH`** to use another **`.jks`**).
+   **Or** if you already have a plaintext upload **`.jks`**: **`OUTREACH_SECRETS_PASSPHRASE=... bash android/scripts/encrypt-upload-keystore-age.sh`** (no path arguments — reads **`~/.config/outreach/upload-keystore.jks`** by default, writes **`secrets/upload-keystore.jks.age`**; set **`OUTREACH_UPLOAD_KEYSTORE_PATH`** to use another **`.jks`**). Repo root **`scripts/encrypt-upload-keystore-age.sh`** forwards to the same implementation.
 4. Merge the printed **`android_upload_signing`** object into **`secrets/outreach-secrets.json`**, run **`bash android/scripts/encrypt-secrets.sh`**, and commit **`secrets/outreach-secrets.json.age`** + **`secrets/upload-keystore.jks.age`**. Never commit plaintext **`*.jks`** or **`outreach-secrets.json`** (both gitignored where applicable).
 5. Back up the local **`.jks`** copy from the script output path (default **`~/.config/outreach/upload-keystore.jks`**) off-disk.
 
@@ -96,7 +96,7 @@ The workflow prefers **repo mode** when **`secrets/upload-keystore.jks.age`** ex
 2. Edit **`android/gradle.properties`**: set **`outreach.versionName=X.Y.Z`** and **`outreach.versionCode`** to an integer **greater** than the last build uploaded to Play.
 3. Commit and **push** the branch to **GitHub**.
 
-**Or** run **`bash android/scripts/create-release-branch.sh`** from the repo root (see **`--help`**). You may omit **`X.Y.Z`** and **`--version-code`**: the script reads **`outreach.versionName`** / **`outreach.versionCode`** from the **base branch** on **`origin`**, applies a **patch** semver bump by default (**`--bump minor|major`** to change), and sets **`versionCode`** to **remote + 1** unless you pass **`--version-code`**. Always confirm **`versionCode`** against the last Play upload. Optional: **`--hotfix`**, **`--base BRANCH`**, **`--no-push`**, **`--dry-run`**. Requires a clean working tree; aborts if the base branch is missing, the branch already exists, or **`git pull --ff-only`** cannot fast-forward.
+**Or** run **`bash android/scripts/create-release-branch.sh`** from the repo root (see **`--help`**); **`scripts/create-release-branch.sh`** forwards to the same script. You may omit **`X.Y.Z`** and **`--version-code`**: the script reads **`outreach.versionName`** / **`outreach.versionCode`** from the **base branch** on **`origin`**, applies a **patch** semver bump by default (**`--bump minor|major`** to change), and sets **`versionCode`** to **remote + 1** unless you pass **`--version-code`**. Always confirm **`versionCode`** against the last Play upload. Optional: **`--hotfix`**, **`--base BRANCH`**, **`--no-push`**, **`--dry-run`**. Requires a clean working tree; aborts if the base branch is missing, the branch already exists, or **`git pull --ff-only`** cannot fast-forward.
 
 **Verify:** Branch **`release/X.Y.Z`** (or **`hotfix/...`**) exists on the remote; **`gradle.properties`** reflects the intended **`versionCode`** / **`versionName`**.
 
@@ -184,7 +184,7 @@ Steps **2** (passphrase) and **3** (signing material) can be prepared in either 
 
 **Do:**
 
-1. Read the **first failed step** (and its log; **`Bundle release`** runs **`build-release-bundle.sh`**, so failures can still map to decrypt, signing mode, keystore, **`setup-secrets`**, or **Gradle**).
+1. Read the **first failed step** (and its log; **`Bundle release`** runs **`android/scripts/build.sh release-bundle`**, so failures can still map to **`scripts/decrypt-age-passphrase.sh`**, signing mode, keystore, **`setup-secrets`**, or **Gradle**).
 2. Fix or add the missing **repository secrets** or committed **`.age`** files / JSON fields (Steps **2**–**3**).
 3. **Re-run failed jobs** or re-dispatch the workflow.
 4. **Do not** increase **`outreach.versionCode`** unless Play has already accepted that **`versionCode`** for this app.
@@ -205,7 +205,7 @@ Each row maps to **Settings → Secrets and variables → Actions → New reposi
 
 | Secret | Purpose | Used by |
 |--------|---------|---------|
-| **`OUTREACH_SECRETS_PASSPHRASE`** | Passphrase for **`secrets/outreach-secrets.json.age`** (and repo-mode **`upload-keystore.jks.age`**) for **`setup-secrets.sh`** / **build-release-bundle** | **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** |
+| **`OUTREACH_SECRETS_PASSPHRASE`** | Passphrase for **`secrets/outreach-secrets.json.age`** (and repo-mode **`upload-keystore.jks.age`**) for **`setup-secrets.sh`** / **`build.sh release-bundle`** | **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** |
 
 ### Upload signing
 
@@ -255,7 +255,7 @@ This repo follows **classic GitFlow**: **`main`** matches what ships on **Google
 2. **`git checkout develop && git pull`** then **`git checkout -b release/X.Y.Z`** (same **`X.Y.Z`** as **`versionName`** — no **`v`** in the branch name).
 3. Edit **`android/gradle.properties`**: set **`outreach.versionName`** to **`X.Y.Z`** and bump **`outreach.versionCode`** by at least **1** vs the last Play upload.
 4. Stabilize on **`release/X.Y.Z`** with bugfixes only.
-5. QA using **`docs/release-checklist.md`** and **[`google-oauth-checklist.md`](google-oauth-checklist.md)**. Build a signed bundle locally (**`./gradlew bundleRelease`** from **`android/`** with **`keystore.properties`**) or rely on CI (**§ First-time release**).
+5. QA using **`docs/release-checklist.md`** and **[`google-oauth-checklist.md`](google-oauth-checklist.md)**. Build a signed bundle locally the same way CI does: **`OUTREACH_SECRETS_PASSPHRASE=… bash android/scripts/build.sh release-bundle`** (see **[`docs/build-process.md`](build-process.md)**), or download the artifact from CI.
 6. Upload the **AAB** to Play **Internal** or **Closed testing** first. Ensure OAuth / Maps / Firebase allow the correct **SHA-1** signatures (**upload** vs **Play app signing** — see **`google-oauth-checklist.md`**).
 7. When ready, merge **`release/X.Y.Z` → `main`** via PR.
 8. On **`main`**, tag: **`git tag -a vX.Y.Z -m "Outreach X.Y.Z"`**.
@@ -265,7 +265,7 @@ This repo follows **classic GitFlow**: **`main`** matches what ships on **Google
 ### Hotfix (production emergency)
 
 1. **`git checkout main && git pull`**
-2. **`git checkout -b hotfix/X.Y.Z`** — bump **`outreach.versionCode`** and **`outreach.versionName`** in **`android/gradle.properties`**, fix, **`./gradlew bundleRelease`**, upload to Play.
+2. **`git checkout -b hotfix/X.Y.Z`** — bump **`outreach.versionCode`** and **`outreach.versionName`** in **`android/gradle.properties`**, fix, **`OUTREACH_SECRETS_PASSPHRASE=… bash android/scripts/build.sh release-bundle`**, upload to Play.
 3. Merge **`hotfix/X.Y.Z` → `main`**, tag **`vX.Y.Z`**, then **`git checkout develop && git merge main`** (or cherry-pick) so **`develop`** stays in sync.
 
 ### Secrets and signing (orthogonal to branches)
@@ -276,7 +276,7 @@ This repo follows **classic GitFlow**: **`main`** matches what ships on **Google
 
 ## Automation
 
-**[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** runs on **`workflow_dispatch`** and on **push** to **`release/**`** or **`hotfix/**`**. The job runs **`android/scripts/build-release-bundle.sh`** (identical to local: **`setup-secrets`**, signing **`jq`**, keystore, **`./gradlew bundleRelease`**) and uploads the **`.aab`** as the **`release-bundle`** artifact.
+**[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** runs on **`workflow_dispatch`** and on **push** to **`release/**`** or **`hotfix/**`**. The step **Bundle release** invokes **`"${GITHUB_WORKSPACE}/android/scripts/build.sh" release-bundle`** (same as local **`build-release-bundle.sh`**): **`setup-secrets`**, **`scripts/decrypt-age-passphrase.sh`** for repo-mode keystore, **`./gradlew bundleRelease`**, then uploads the **`.aab`** as the **`release-bundle`** artifact.
 
 For workflows, **`gh`**, and merge gates, see **[`ci-cd.md`](ci-cd.md)**. Secret names and fork caveats: **[`github-actions-secrets.md`](github-actions-secrets.md)**.
 

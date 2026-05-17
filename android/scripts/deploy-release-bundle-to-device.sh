@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Install a signed release bundle on a physical Android device.
-# Expects the .aab produced by build-release-bundle.sh (default path below). Run build-release-bundle.sh first.
+# Expects the .aab produced the same way as CI (default path below). Build first — see "Build the .aab".
 # Uses bundletool to generate a device-specific APK set from app-release.aab.
 #
 # Usage:
-#   bash android/scripts/build-release-bundle.sh   # produces app/build/outputs/bundle/release/app-release.aab
+#   # Same signing + secrets as GitHub Actions (run from repo root; passphrase or ~/etc/outreach.env):
+#   OUTREACH_SECRETS_PASSPHRASE=... bash android/scripts/build.sh release-bundle
+#   # (build-release-bundle.sh is a thin wrapper around the above.)
 #   bash android/scripts/deploy-release-bundle-to-device.sh
 #   bash android/scripts/deploy-release-bundle-to-device.sh --serial <device-serial>
 #   bash android/scripts/deploy-release-bundle-to-device.sh --bundle /path/to/app-release.aab
@@ -36,8 +38,9 @@ usage() {
   cat <<'EOF'
 Install a signed release bundle on a physical Android device.
 
-Build the .aab first (same output path as CI):
-  bash android/scripts/build-release-bundle.sh
+Build the .aab first (same commands as CI — decrypts repo keystore + setup-secrets + bundleRelease):
+  OUTREACH_SECRETS_PASSPHRASE=... bash android/scripts/build.sh release-bundle
+  # or: bash android/scripts/build-release-bundle.sh
 
 Then deploy (default AAB: android/app/build/outputs/bundle/release/app-release.aab):
   bash android/scripts/deploy-release-bundle-to-device.sh
@@ -147,8 +150,9 @@ fi
 
 if [[ ! -f "${AAB_PATH}" ]]; then
   echo "deploy-release-bundle-to-device: missing AAB: ${AAB_PATH}" >&2
-  echo "Run: bash android/scripts/build-release-bundle.sh" >&2
-  echo "Or pass: --aab /path/to/app-release.aab" >&2
+  echo "Build like CI (from repo root): OUTREACH_SECRETS_PASSPHRASE=... bash android/scripts/build.sh release-bundle" >&2
+  echo "Or: bash android/scripts/build-release-bundle.sh  — then re-run this script." >&2
+  echo "Or pass an existing bundle: --aab /path/to/app-release.aab" >&2
   exit 1
 fi
 

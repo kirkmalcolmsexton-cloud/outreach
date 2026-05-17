@@ -9,7 +9,7 @@
 # Prerequisites: age; for headless encrypt, expect.
 #
 # Usage (from repo root):
-#   OUTREACH_SECRETS_PASSPHRASE=... ./android/scripts/encrypt-upload-keystore-age.sh
+#   OUTREACH_SECRETS_PASSPHRASE=... bash android/scripts/encrypt-upload-keystore-age.sh
 # TTY: omit env; age prompts twice.
 
 set -euo pipefail
@@ -38,7 +38,7 @@ OUTPUT_AGE="${OUTREACH_ROOT}/secrets/upload-keystore.jks.age"
 
 [[ -f "${INPUT_FILE}" ]] || {
   echo "encrypt-upload-keystore-age: plaintext keystore not found: ${INPUT_FILE}" >&2
-  echo "  Generate one with create-upload-keystore-and-gh-secrets.sh or set OUTREACH_UPLOAD_KEYSTORE_PATH." >&2
+  echo "  Generate one with android/scripts/create-upload-keystore-and-gh-secrets.sh or set OUTREACH_UPLOAD_KEYSTORE_PATH." >&2
   exit 1
 }
 

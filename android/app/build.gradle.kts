@@ -17,8 +17,11 @@ private data class ReleaseSigningMaterial(
     val keyPassword: String,
 )
 
-/** CI: ANDROID_UPLOAD_KEYSTORE_PATH + password/alias env vars. Local: android/keystore.properties. */
-private fun resolveReleaseSigning(androidRoot: Project): ReleaseSigningMaterial? {
+/**
+ * CI / `android/scripts/build.sh release-bundle`: ANDROID_UPLOAD_* env vars (decrypted repo keystore).
+ * Fallback: android/keystore.properties — optional; does not run setup-secrets or match CI unless same .jks.
+ */
+private fun resolveReleaseSigning(androidRoot: Project): Pair<ReleaseSigningMaterial?, String> {
     val envPath = System.getenv("ANDROID_UPLOAD_KEYSTORE_PATH")?.trim()?.takeIf { it.isNotEmpty() }
     val envStorePass = System.getenv("ANDROID_UPLOAD_KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
     val envAlias = System.getenv("ANDROID_UPLOAD_KEY_ALIAS")?.takeIf { it.isNotBlank() }
@@ -32,22 +35,24 @@ private fun resolveReleaseSigning(androidRoot: Project): ReleaseSigningMaterial?
                     "(CI must decode the keystore before Gradle runs.)",
             )
         }
-        return ReleaseSigningMaterial(f, envStorePass, envAlias, envKeyPass)
+        return Pair(ReleaseSigningMaterial(f, envStorePass, envAlias, envKeyPass), "env")
     }
 
     val propsFile = androidRoot.file("keystore.properties")
-    if (!propsFile.isFile) return null
+    if (!propsFile.isFile) return Pair(null, "none")
     val p = Properties().apply { propsFile.inputStream().use { load(it) } }
-    val storeRelative = p.getProperty("storeFile")?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-    val storePass = p.getProperty("storePassword") ?: return null
-    val alias = p.getProperty("keyAlias") ?: return null
-    val keyPass = p.getProperty("keyPassword") ?: return null
+    val storeRelative = p.getProperty("storeFile")?.trim()?.takeIf { it.isNotEmpty() } ?: return Pair(null, "none")
+    val storePass = p.getProperty("storePassword") ?: return Pair(null, "none")
+    val alias = p.getProperty("keyAlias") ?: return Pair(null, "none")
+    val keyPass = p.getProperty("keyPassword") ?: return Pair(null, "none")
     val storeFile = androidRoot.file(storeRelative)
-    if (!storeFile.isFile) return null
-    return ReleaseSigningMaterial(storeFile, storePass, alias, keyPass)
+    if (!storeFile.isFile) return Pair(null, "none")
+    return Pair(ReleaseSigningMaterial(storeFile, storePass, alias, keyPass), "keystore.properties")
 }
 
-private val releaseSigning = resolveReleaseSigning(project.rootProject)
+private val releaseSigningPair = resolveReleaseSigning(project.rootProject)
+private val releaseSigning = releaseSigningPair.first
+private val releaseSigningSource = releaseSigningPair.second
 
 /** True when the CLI requested `bundleRelease` (configuration-cache compatible; avoids `doFirst` on that task). */
 private fun Gradle.startParameterRequestsBundleRelease(): Boolean =
@@ -59,11 +64,32 @@ if (gradle.startParameterRequestsBundleRelease() && releaseSigning == null) {
     error(
         """
         Release signing is not configured.
-        CI: set ANDROID_UPLOAD_* repository secrets and decode keystore to ANDROID_UPLOAD_KEYSTORE_PATH before Gradle runs.
-        Local: copy android/keystore.properties.example to android/keystore.properties.
-        First-time secrets: bash android/scripts/create-upload-keystore-and-gh-secrets.sh
+
+        Same as GitHub Actions (setup-secrets + repo upload keystore): from repo root,
+          OUTREACH_SECRETS_PASSPHRASE=... bash android/scripts/build.sh release-bundle
+
+        Or Gradle-only fallback: copy android/keystore.properties.example to android/keystore.properties
+        (personal/offline; differs from CI unless that file points at the same keystore as CI).
+
+        First-time signing setup: bash android/scripts/create-upload-keystore-and-gh-secrets.sh
         """.trimIndent(),
     )
+}
+
+if (gradle.startParameterRequestsBundleRelease() &&
+    releaseSigning != null &&
+    releaseSigningSource == "keystore.properties"
+) {
+    val ksAge = rootProject.projectDir.parentFile.resolve("secrets/upload-keystore.jks.age")
+    if (ksAge.isFile) {
+        rootProject.logger.lifecycle(
+            """
+            Outreach: bundleRelease uses android/keystore.properties.
+            For the same google-services.json + signing as GitHub Actions, use:
+              OUTREACH_SECRETS_PASSPHRASE=... bash android/scripts/build.sh release-bundle
+            """.trimIndent(),
+        )
+    }
 }
 
 android {

@@ -70,7 +70,7 @@ Status check names in the GitHub UI are usually **`Workflow display name / job i
 | [`.github/workflows/dependency-review.yml`](../.github/workflows/dependency-review.yml) | Dependency Review | **`dependency-review`** | Supply-chain review (requires dependency graph where applicable). |
 | [`.github/workflows/secret-scan.yml`](../.github/workflows/secret-scan.yml) | **Secret Scan** | **`gitleaks`** | Secret scanning. |
 
-**Triggers and paths:** **`android.yml`** runs on **`push`** / **`pull_request`** when **`android/**`** or that workflow file changes — doc-only PRs may skip Android CI. **`android-release-build.yml`** does **not** run on arbitrary PRs from forks with secrets; see **`github-actions-secrets.md`**.
+**Triggers and paths:** **`android.yml`** runs on **`push`** / **`pull_request`** when **`android/**`**, **`scripts/**`** (shared bash used by **`build.sh release-bundle`**, signing helpers, …), or that workflow file changes — docs-only PRs may skip Android CI unless they touch listed paths. **`android-release-build.yml`** does **not** run on arbitrary PRs from forks with secrets; see **`github-actions-secrets.md`**.
 
 **Concurrency:** Workflows use **`concurrency`** so newer runs cancel superseded ones on the same branch/ref where configured.
 

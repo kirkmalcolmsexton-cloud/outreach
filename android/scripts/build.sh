@@ -73,6 +73,28 @@ cmd_release_bundle() (
   bash "${SCRIPT_DIR}/setup-secrets.sh"
   jq empty "${OUTREACH_JSON}" >/dev/null
 
+  # --- Secrets parity with CI (GitHub always builds from committed outreach-secrets.json.age) ---
+  secrets_plaintext_is_example_placeholder() {
+    local f="$1"
+    [[ -f "$f" ]] || return 1
+    jq -e '
+      ((.google_services.project_info.project_id? // "") == "outreach-placeholder")
+      or (((.google_services.client[0].api_key // [])[0].current_key? // "") == "AIzaSyPlaceholderReplaceForProd")
+    ' "$f" >/dev/null 2>&1
+  }
+  PLAIN_SECRETS="${REPO_ROOT}/secrets/outreach-secrets.json"
+  AGE_SECRETS="${REPO_ROOT}/secrets/outreach-secrets.json.age"
+  if [[ ! -f "${AGE_SECRETS}" && -f "${PLAIN_SECRETS}" ]] && ! secrets_plaintext_is_example_placeholder "${PLAIN_SECRETS}"; then
+    echo "build: (release-bundle) WARNING: secrets/outreach-secrets.json.age is missing; this build used plaintext JSON only." >&2
+    echo "  CI always uses the committed .age file. Re-run: bash scripts/encrypt-secrets.sh — results will not match CI until .age is committed." >&2
+  fi
+  if [[ -f "${AGE_SECRETS}" && -f "${PLAIN_SECRETS}" ]] && ! secrets_plaintext_is_example_placeholder "${PLAIN_SECRETS}"; then
+    if ! cmp -s <(jq -S . "${OUTREACH_JSON}") <(jq -S . "${PLAIN_SECRETS}"); then
+      echo "build: (release-bundle) WARNING: secrets/outreach-secrets.json differs from decrypted outreach-secrets.json.age." >&2
+      echo "  This build uses the .age file (same as CI). Plaintext edits are ignored until you run: bash scripts/encrypt-secrets.sh" >&2
+    fi
+  fi
+
   KS_AGE="${REPO_ROOT}/secrets/upload-keystore.jks.age"
   repo_ok=false
   if [[ -f "${KS_AGE}" ]] && jq -e '
@@ -103,7 +125,7 @@ cmd_release_bundle() (
   fi
 
   if [[ "${SIGNING_MODE}" == "repo" ]]; then
-    bash "${SCRIPT_DIR}/decrypt-age-passphrase.sh" "${KS_AGE}" "${UPLOAD_JKS}"
+    bash "${REPO_ROOT}/scripts/decrypt-age-passphrase.sh" "${KS_AGE}" "${UPLOAD_JKS}"
     if ! [[ -s "${UPLOAD_JKS}" ]]; then
       echo "build: (release-bundle) decrypted keystore missing/empty at ${UPLOAD_JKS}" >&2
       exit 1
@@ -128,7 +150,15 @@ cmd_release_bundle() (
   export ANDROID_UPLOAD_KEYSTORE_PATH="${UPLOAD_JKS}"
 
   ./gradlew bundleRelease --no-daemon
-  echo "AAB: $(pwd)/app/build/outputs/bundle/release/app-release.aab"
+  AAB_OUT="$(pwd)/app/build/outputs/bundle/release/app-release.aab"
+  echo "AAB: ${AAB_OUT}"
+  echo ""
+  echo "build: (release-bundle) Upload signing certificate (compare SHA-1 to GitHub artifact — must match for identical OAuth behavior):"
+  if [[ -f "${AAB_OUT}" ]] && command -v keytool >/dev/null 2>&1; then
+    keytool -printcert -jarfile "${AAB_OUT}" 2>/dev/null | grep -E '^[[:space:]]*(SHA1|SHA256):' || keytool -printcert -jarfile "${AAB_OUT}" 2>/dev/null | head -25
+  else
+    echo "  (install a JDK with keytool and rebuild to print cert; or run: keytool -printcert -jarfile ${AAB_OUT})" >&2
+  fi
 )
 
 # --- CI (identical to previous android-ci.sh) ---------------------------------

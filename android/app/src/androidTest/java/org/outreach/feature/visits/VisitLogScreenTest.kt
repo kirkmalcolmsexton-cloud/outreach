@@ -1,6 +1,8 @@
 package org.outreach.feature.visits
 
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -10,6 +12,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertTrue
 import org.outreach.core.model.HouseholdRecord
 import org.outreach.core.model.RawHouseholdRow
 import org.outreach.core.model.SourceMetadata
@@ -51,6 +54,14 @@ class VisitLogScreenTest {
         composeRule.waitForIdle()
         composeRule.waitForSemanticTree()
 
+        composeRule.onNodeWithTag(TestTags.VISITS_ROOT).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.VISITS_NOTES).assertIsDisplayed()
+        composeRule.onNodeWithText("Visit update").assertIsDisplayed()
+        val titleY = composeRule.onNodeWithText("Visit update").getUnclippedBoundsInRoot().let { ((it.top + it.bottom) / 2f).value }
+        val briefY = composeRule.onNodeWithTag(TestTags.VISITS_BRIEF).getUnclippedBoundsInRoot()
+            .let { ((it.top + it.bottom) / 2f).value }
+        assertTrue("title above brief row", titleY < briefY)
+        composeRule.onNodeWithText("Save offline + queue sync").assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.VISITS_BRIEF).performClick()
         composeRule.onNodeWithText("Receptive").performClick()
 

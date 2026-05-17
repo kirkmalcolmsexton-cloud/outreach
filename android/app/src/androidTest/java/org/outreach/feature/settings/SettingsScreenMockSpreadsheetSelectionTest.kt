@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import kotlinx.coroutines.runBlocking
@@ -16,6 +17,7 @@ import org.outreach.core.model.AppConfig
 import org.outreach.testing.ComposeHostActivity
 import org.outreach.testing.createComposeHostRule
 import org.outreach.testing.FakeSheetsApi
+import org.outreach.testing.assertCenterXIsToTheLeft
 import org.outreach.testing.waitForSemanticTree
 import org.outreach.ui.testtags.TestTags
 
@@ -64,12 +66,20 @@ class SettingsScreenMockSpreadsheetSelectionTest {
         composeRule.waitForIdle()
         composeRule.waitForSemanticTree()
 
+        composeRule.onNodeWithTag(TestTags.SETTINGS_ROOT).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SETTINGS_VALIDATE).assertIsDisplayed()
+        composeRule.assertCenterXIsToTheLeft(
+            TestTags.SETTINGS_PICK_SPREADSHEET,
+            TestTags.SETTINGS_VALIDATE
+        )
+
         composeRule.onNodeWithTag(TestTags.SETTINGS_PICK_SPREADSHEET).performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) { pickedSpreadsheetId != null }
         assertNotNull(pickedSpreadsheetId)
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithText("60618").fetchSemanticsNodes().isNotEmpty()
         }
+        composeRule.onNodeWithTag(TestTags.SETTINGS_ZIP_SECTION).assertIsDisplayed()
         composeRule.onNodeWithText("60618").performClick()
         composeRule.onNodeWithTag(TestTags.SETTINGS_SYNC).performClick()
 

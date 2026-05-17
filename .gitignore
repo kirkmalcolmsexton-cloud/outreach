@@ -3,6 +3,9 @@
 
 # Real Firebase config must stay local; commit only the example template.
 android/app/google-services.json
+ios/Outreach/Outreach/GoogleService-Info.plist
+# Local xcodebuild output (default OUTREACH_DERIVED_DATA in ios/scripts/build.sh)
+ios/build/
 
 # Local env/config files (keep secrets out of git)
 .env
@@ -22,6 +25,16 @@ android/keystore.properties
 *.p12
 *.pem
 
+# One-off Sheets populate script (OAuth token + venv)
+scripts/token.populate_sheets.json
+scripts/.venv-populate-sheets/
+
 # Local IDE/system artifacts
 .DS_Store
 .idea/
+
+# Xcode per-user state (shared schemes live under xcshareddata)
+**/xcuserdata/
+
+# Python
+**/__pycache__/
