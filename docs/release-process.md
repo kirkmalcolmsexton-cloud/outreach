@@ -222,13 +222,13 @@ Each row maps to **Settings → Secrets and variables → Actions → New reposi
 
 Populate legacy **`ANDROID_UPLOAD_*`** with **[`android/scripts/create-upload-keystore-and-gh-secrets.sh`](../android/scripts/create-upload-keystore-and-gh-secrets.sh)** (without **`OUTREACH_SIGNING_REPO_MODE`**) or manually. **`GITHUB_TOKEN`** is automatic and is not a repository secret.
 
-Secrets are **not** passed to **`pull_request`** workflows from forks — see **[`github-actions-secrets.md`](github-actions-secrets.md#fork-and-pull-request-caveat)**.
+Fork and branch-build signing caveats — see **[`github-actions-secrets.md` → Fork and branch-build caveat](github-actions-secrets.md#fork-and-branch-build-caveat)**.
 
 ---
 
 ## GitFlow overview
 
-This repo follows **classic GitFlow**: **`main`** matches what ships on **Google Play**; **`develop`** integrates feature work. **CI** runs gates on PRs; **shipping** to Play is a human cut (branch, **`bundleRelease`**, Console) unless you add CD.
+This repo follows **classic GitFlow**: **`main`** matches what ships on **Google Play**; **`develop`** integrates feature work. **CI** runs on **branch push**; **PR rulesets** require those checks (and **Dependency Review**) on the head commit before merge. **Shipping** to Play is a human cut (branch, **`bundleRelease`**, Console) unless you add CD.
 
 ### Branches
 

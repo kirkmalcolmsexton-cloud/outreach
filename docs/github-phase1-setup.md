@@ -47,6 +47,15 @@ Keep this information **out of git** (password manager or internal doc). Replace
 | Play App Signing: app signing key held by | Google / note |
 | GitHub Actions secrets (Phase 2 CD) | See **[`github-actions-secrets.md`](github-actions-secrets.md)** — **`android-release-build`** uses **`OUTREACH_SECRETS_PASSPHRASE`**; other workflows typically need only `GITHUB_TOKEN` |
 
-## 5. After Phase 1
+## 5. After Phase 1 (Phase 2 — CI gates)
 
-When Phase 2 adds **`.github/workflows/`**, open a throwaway PR, note **exact** job names on the **Checks** tab, then add those names under **Require status checks** per target branch (`README.md` → CI/CD tables).
+When **`.github/workflows/`** exist:
+
+1. **Push** a test commit to a feature branch (touch **`android/**`** if using path filters).
+2. Note **exact** job names from the **Actions** run and the PR **Checks** tab.
+3. In each ruleset for **`main`**, **`develop`**, **`release/**`**, **`hotfix/**`**, enable:
+   - **Require status checks to pass before merging** — names from **[`ci-cd.md` → Merge quality gates](ci-cd.md#merge-quality-gates-branch-rulesets)**.
+   - **Require branches to be up to date before merging** — contributors must re-push after rebase so branch CI re-runs.
+4. Open a throwaway PR and confirm checks on the head SHA match the push run (plus **Dependency Review** on the PR).
+
+See **[`ci-cd.md` → Validate rulesets](ci-cd.md#validate-rulesets-dry-run)** for the full dry-run checklist.

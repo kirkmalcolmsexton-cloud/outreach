@@ -64,21 +64,40 @@ Status check names in the GitHub UI are usually **`Workflow display name / job i
 |----------------|------------------------|--------|----------------|
 | [`.github/workflows/android.yml`](../.github/workflows/android.yml) | **Android CI** | **`verify`** | **`android/scripts/build.sh` `ci` `verify`** (Firebase example + **`check`**). |
 | Same | Same | **`instrumented`** | **`build.sh` `ci` `build-instrumented-apks`**, then API **34** / **x86_64** emulator, then **`build.sh` `ci` `connected-mock`**. |
-| [`.github/workflows/android-release-readiness.yml`](../.github/workflows/android-release-readiness.yml) | **Android release readiness** | **`release-readiness`** | When PR **base** is **`release/**`** or **`hotfix/**`**: version check script, **`lintRelease`**, **`testReleaseUnitTest`**. |
+| [`.github/workflows/android-release-readiness.yml`](../.github/workflows/android-release-readiness.yml) | **Android release readiness** | **`release-readiness`** | On **push** to **`release/**`** or **`hotfix/**`**: version check script, **`lintRelease`**, **`testReleaseUnitTest`**. |
 | [`.github/workflows/android-release-build.yml`](../.github/workflows/android-release-build.yml) | **Android release bundle** | **`bundle-release`** | **`workflow_dispatch`** or **push** to **`release/**`** / **`hotfix/**`**: runs **`build.sh` `release-bundle`** (alias **`build-release-bundle.sh`**, upload **`.aab`**). See **[`github-actions-secrets.md`](github-actions-secrets.md)**. |
 | [`.github/workflows/android-version-bump.yml`](../.github/workflows/android-version-bump.yml) | **Android version bump** | **`bump`** | Manual only on **`release/**`** / **`hotfix/**`**: bumps **`outreach.version*`** in **`gradle.properties`** (never **`main`**). |
-| [`.github/workflows/dependency-review.yml`](../.github/workflows/dependency-review.yml) | Dependency Review | **`dependency-review`** | Supply-chain review (requires dependency graph where applicable). |
-| [`.github/workflows/secret-scan.yml`](../.github/workflows/secret-scan.yml) | **Secret Scan** | **`gitleaks`** | Secret scanning. |
+| [`.github/workflows/dependency-review.yml`](../.github/workflows/dependency-review.yml) | Dependency Review | **`dependency-review`** | Supply-chain review on **`pull_request`** only (GitHub has no push equivalent). |
+| [`.github/workflows/secret-scan.yml`](../.github/workflows/secret-scan.yml) | **Secret Scan** | **`gitleaks`** | Secret scanning on **push** to any branch. |
 
-**Triggers and paths:** **`android.yml`** runs on **`push`** / **`pull_request`** when **`android/**`**, **`scripts/**`** (shared bash used by **`build.sh release-bundle`**, signing helpers, …), or that workflow file changes — docs-only PRs may skip Android CI unless they touch listed paths. **`android-release-build.yml`** does **not** run on arbitrary PRs from forks with secrets; see **`github-actions-secrets.md`**.
+**Triggers and paths:** Build workflows (**`android.yml`**, **`secret-scan.yml`**, **`android-release-readiness.yml`**, **CodeQL**) run on **`push`** only (plus **`workflow_dispatch`** where defined). **`android.yml`** path-filters **`android/**`**, **`scripts/**`**, or its workflow file — docs-only pushes may skip Android CI. **`android-release-build.yml`** uses **`push`** to **`release/**`** / **`hotfix/**`** only (not PRs); see **`github-actions-secrets.md`**. **`dependency-review.yml`** is the **only** workflow still triggered by **`pull_request`**.
 
-**Concurrency:** Workflows use **`concurrency`** so newer runs cancel superseded ones on the same branch/ref where configured.
+**Concurrency:** Workflows use **`concurrency`** keyed by **`github.ref`** so newer runs cancel superseded ones on the same branch.
+
+---
+
+## Branch builds vs PR merge gates
+
+CI **builds** run on **`push`** to the source branch. **PRs** still require those checks to pass on the **head commit** before merge — GitHub attaches check results to the commit SHA, not the event type.
+
+**Contributor workflow:**
+
+1. **Push** (or re-push) your branch and wait for Actions to finish on that commit.
+2. Open or update the PR — the **Checks** tab should show the same status names as the branch push run.
+3. After rebasing onto **`develop`**, **`main`**, or a release branch, **push again** so CI re-runs on the new head SHA.
+
+Opening a PR alone does **not** start **Android CI**, **Secret Scan**, or **release readiness** — only **Dependency Review** runs on **`pull_request`**.
+
+**Rulesets (GitHub → Settings → Rules → Rulesets):** On **`develop`**, **`main`**, **`release/**`**, and **`hotfix/**`**, enable:
+
+- **Require status checks to pass before merging** — use the **exact** check names from the table below.
+- **Require branches to be up to date before merging** — forces a fresh push (and branch build) after the target branch moves.
 
 ---
 
 ## Merge quality gates (branch rulesets)
 
-Configure **GitHub Rulesets → Required status checks** using the **exact** strings from the PR **Checks** tab (often **`Workflow name / job id`**).
+Configure **GitHub Rulesets → Required status checks** using the **exact** strings from the PR **Checks** tab (often **`Workflow name / job id`**). Checks must have completed on the PR’s **head commit** (from a branch **`push`**, except **Dependency Review**).
 
 | Typical PR target | Often required checks |
 |-------------------|------------------------|
@@ -87,6 +106,15 @@ Configure **GitHub Rulesets → Required status checks** using the **exact** str
 | **`main`** | Mirror team policy — often aligned with **`release/**`**. |
 
 **Disable a gate safely:** remove it from Rulesets **before** deleting or renaming the workflow job — otherwise merges can wait forever on a missing check.
+
+### Validate rulesets (dry run)
+
+After enabling required checks:
+
+1. Push a commit to a feature branch that touches **`android/**`** (or use **`gh workflow run "Android CI" --ref my-branch`**).
+2. Confirm **Actions** shows **push** runs for **Android CI** and **Secret Scan** (not duplicate PR runs for those workflows).
+3. Open a PR into **`develop`** — **Checks** should list the branch-build results on the head SHA plus **Dependency Review** from the PR event.
+4. Rebase onto latest **`develop`**, push, and confirm new checks run before merge is allowed.
 
 ---
 

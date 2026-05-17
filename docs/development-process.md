@@ -14,24 +14,25 @@ Do not bump **`main`** or Play **`versionCode`** from feature branches unless yo
 
 1. **`git checkout develop && git pull`**
 2. **`git checkout -b feature/<short-description-or-ticket>`**
-3. Implement and push; open a PR **into `develop`**.
-4. Address review feedback; merge when checks pass and approval is in place.
+3. Implement, **push**, and wait for branch CI (see **Reviews and CI** below); then open a PR **into `develop`**.
+4. Address review feedback; **re-push** after rebase or new commits so checks run on the latest head SHA; merge when checks pass and approval is in place.
 
 ## Pull requests
 
 - Describe **what** changed and **why** (user-visible behavior, risk, and test evidence).
 - Keep PRs focused; prefer follow-up tickets over drive-by refactors.
-- Touch **`android/**`** when you need CI workflows that filter on that path — doc-only PRs may skip Android jobs ([README → CI/CD](../README.md#cicd-github-actions)).
+- Touch **`android/**`** when you need CI workflows that filter on that path — doc-only pushes may skip Android jobs ([README → CI/CD](../README.md#cicd-github-actions)).
 
 ## Reviews and CI
 
-Configure **GitHub Rulesets** and required checks per team policy. Workflow names, **`gh`** commands, and local Gradle parity: **[`docs/ci-cd.md`](ci-cd.md)**. Short summary: [README → CI/CD (GitHub Actions)](../README.md#cicd-github-actions).
+Build workflows run on **branch push**, not on opening a PR. Rulesets still require those checks on the PR **head commit** before merge. Full model, ruleset settings, and validation steps: **[`docs/ci-cd.md` → Branch builds vs PR merge gates](ci-cd.md#branch-builds-vs-pr-merge-gates)**. Workflow names, **`gh`** commands, and local Gradle parity: **[`docs/ci-cd.md`](ci-cd.md)**. Short summary: [README → CI/CD (GitHub Actions)](../README.md#cicd-github-actions).
 
-Typical expectations:
+Typical expectations (from the latest **push** to your branch, plus **Dependency Review** on the PR):
 
 - **`Android CI / verify`** — Gradle **`check`** (compilation, unit tests, lint where applicable).
 - **`Android CI / instrumented`** — emulator **`connectedDebugAndroidTest`** with **`mock`** auth (optional as a required gate depending on policy).
-- **Dependency Review** / **Secret Scan** — repository hygiene.
+- **Dependency Review** — runs on **`pull_request`** only.
+- **Secret Scan** — runs on **push**.
 
 Use **[`docs/testing-process.md`](testing-process.md)** for what to run before pushing; **[`docs/testing-guide.md`](testing-guide.md)** for exact commands and device setup. **[`docs/build-process.md`](build-process.md)** covers debug vs release artifacts and secrets wiring.
 
