@@ -30,6 +30,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
 import com.google.android.gms.common.ConnectionResult
@@ -41,10 +42,18 @@ import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.GoogleAuthProvider
 import org.outreach.app.BuildConfig
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.security.MessageDigest
+
+data class PendingGoogleSignIn(
+    val intent: Intent,
+    val forScopes: Boolean,
+)
 
 @Composable
 fun LoginGateScreen(onSignedIn: () -> Unit) {
@@ -68,6 +77,15 @@ fun LoginGateScreen(onSignedIn: () -> Unit) {
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         viewModel.onGoogleScopeActivityResult(context, result.resultCode, result.data)
+    }
+    LaunchedEffect(Unit) {
+        viewModel.pendingGoogleSignIn.collect { pending ->
+            if (pending.forScopes) {
+                scopeLauncher.launch(pending.intent)
+            } else {
+                signInLauncher.launch(pending.intent)
+            }
+        }
     }
     LaunchedEffect(session, hasRequiredScopes) {
         if (session && !hasRequiredScopes && !scopeConsentLaunched) {
@@ -138,6 +156,9 @@ class AuthViewModel(
     val session: StateFlow<Boolean> = _session.asStateFlow()
     private val _error = MutableStateFlow("")
     val error: StateFlow<String> = _error.asStateFlow()
+    private val _pendingGoogleSignIn = MutableSharedFlow<PendingGoogleSignIn>(extraBufferCapacity = 1)
+    val pendingGoogleSignIn: SharedFlow<PendingGoogleSignIn> = _pendingGoogleSignIn.asSharedFlow()
+    private var developerErrorRetried = false
 
     /**
      * Clears cached Google Sign-In state, then returns the sign-in [Intent].
@@ -147,8 +168,12 @@ class AuthViewModel(
     fun beginGoogleSignIn(
         context: Context,
         includeScopes: Boolean,
+        isUserInitiated: Boolean = true,
         onIntent: (Intent?) -> Unit,
     ) {
+        if (isUserInitiated) {
+            developerErrorRetried = false
+        }
         val playServicesError = checkGooglePlayServices(context)
         if (playServicesError != null) {
             setAuthError(context, playServicesError)
@@ -161,10 +186,16 @@ class AuthViewModel(
             onIntent(null)
             return
         }
-        val client = GoogleSignIn.getClient(context, buildGoogleSignInOptions(webClientId, includeScopes))
-        client.signOut().addOnCompleteListener {
-            onIntent(client.signInIntent)
+        if (!isValidWebClientId(webClientId)) {
+            setAuthError(
+                context,
+                "Invalid OAuth Web client ID in google-services.json (expected *.apps.googleusercontent.com). " +
+                    "Download a fresh file from Firebase → Project settings → Your Android app."
+            )
+            onIntent(null)
+            return
         }
+        prepareGoogleSignInIntent(context, webClientId, includeScopes, onIntent)
     }
 
     fun hasRequiredGoogleScopes(context: Context): Boolean {
@@ -182,13 +213,13 @@ class AuthViewModel(
     }
 
     fun onGoogleSignInActivityResult(context: Context, resultCode: Int, data: Intent?) {
-        resolveGoogleSignInTask(context, resultCode, data) { account ->
+        resolveGoogleSignInTask(context, resultCode, data, includeScopes = false) { account ->
             signInToFirebase(context, account)
         }
     }
 
     fun onGoogleScopeActivityResult(context: Context, resultCode: Int, data: Intent?) {
-        resolveGoogleSignInTask(context, resultCode, data) { account ->
+        resolveGoogleSignInTask(context, resultCode, data, includeScopes = true) { account ->
             if (GoogleSignIn.hasPermissions(account, *requiredScopes)) {
                 _session.value = auth.currentUser != null
                 _error.value = ""
@@ -209,14 +240,21 @@ class AuthViewModel(
         context: Context,
         resultCode: Int,
         data: Intent?,
+        includeScopes: Boolean,
         onAccount: (GoogleSignInAccount) -> Unit,
     ) {
         val task = GoogleSignIn.getSignedInAccountFromIntent(data)
         try {
+            developerErrorRetried = false
             onAccount(task.getResult(ApiException::class.java))
         } catch (e: ApiException) {
             logAuth("GoogleSignIn.getSignedInAccountFromIntent failed", e)
-            setAuthError(context, formatGoogleSignInFailure(e))
+            if (e.statusCode == ConnectionResult.DEVELOPER_ERROR && !developerErrorRetried) {
+                developerErrorRetried = true
+                retryGoogleSignInAfterDeveloperError(context, includeScopes)
+                return
+            }
+            setAuthError(context, formatGoogleSignInFailure(context, e))
         } catch (e: Exception) {
             logAuth("GoogleSignIn.getSignedInAccountFromIntent failed", e)
             if (resultCode == Activity.RESULT_CANCELED) {
@@ -258,24 +296,106 @@ class AuthViewModel(
         setAuthError(context, message)
     }
 
-    private fun formatGoogleSignInFailure(e: Exception): String {
+    private fun formatGoogleSignInFailure(context: Context, e: Exception): String {
         val api = e as? ApiException ?: return "Google sign-in failed: ${e.message ?: e.javaClass.simpleName}"
         val code = api.statusCode
         if (code == GoogleSignInStatusCodes.SIGN_IN_CANCELLED) {
             return "Sign-in cancelled"
         }
         val label = runCatching { GoogleSignInStatusCodes.getStatusCodeString(code) }.getOrElse { "unknown" }
+        val webClientHint = webClientIdDebugHint(context)
         val extra = when (code) {
             com.google.android.gms.common.ConnectionResult.DEVELOPER_ERROR ->
-                " On older phones: update Google Play services in the Play Store, then tap Continue again. " +
-                    "If it persists, verify the Web client ID in google-services.json matches Firebase Auth → Google. " +
-                    "Otherwise register every signing cert (debug, CI upload, Play App signing) — docs/google-oauth-checklist.md."
+                developerErrorGuidance(context) + webClientHint
             GoogleSignInStatusCodes.SIGN_IN_FAILED ->
                 " If Google blocked access (verification / testing), add this Google account under Test users " +
                     "for the same Cloud project as your Web client ID, or finish verification."
             else -> ""
         }
         return "Google sign-in failed ($label, code $code).$extra"
+    }
+
+    private fun developerErrorGuidance(context: Context): String {
+        val playServices = runCatching {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo("com.google.android.gms", 0).versionName
+        }.getOrNull() ?: "unknown"
+        return if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            " On Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) with Play services $playServices: " +
+                "open Play Store → update Google Play services, then tap Continue again. " +
+                "If it persists, verify Web client ID and every signing SHA-1 (debug, CI upload, Play App signing) — " +
+                "docs/google-oauth-checklist.md."
+        } else {
+            " Update Google Play services ($playServices) if needed, then tap Continue again. " +
+                "Verify Web client ID in google-services.json matches Firebase Auth → Google and every signing SHA-1 — " +
+                "docs/google-oauth-checklist.md."
+        }
+    }
+
+    private fun webClientIdDebugHint(context: Context): String {
+        val id = resolveWebClientId(context)
+        if (id.isBlank()) return " Web client ID: missing."
+        val suffix = id.takeLast(20)
+        return " Web client ID: …$suffix."
+    }
+
+    private fun retryGoogleSignInAfterDeveloperError(context: Context, includeScopes: Boolean) {
+        val webClientId = resolveWebClientId(context)
+        if (webClientId.isBlank()) return
+        prepareGoogleSignInIntent(context, webClientId, includeScopes) { intent ->
+            if (intent != null) {
+                _pendingGoogleSignIn.tryEmit(PendingGoogleSignIn(intent, includeScopes))
+            }
+        }
+    }
+
+    /**
+     * Sign out every [GoogleSignInOptions] variant we have used (legacy all-scopes + two-step flow).
+     * On API 29 and below, also revoke access — older Play services often keep stale OAuth linkage.
+     */
+    private fun prepareGoogleSignInIntent(
+        context: Context,
+        webClientId: String,
+        includeScopes: Boolean,
+        onIntent: (Intent?) -> Unit,
+    ) {
+        val targetClient = GoogleSignIn.getClient(context, buildGoogleSignInOptions(webClientId, includeScopes))
+        val clients = listOf(
+            GoogleSignIn.getClient(context, GoogleSignInOptions.DEFAULT_SIGN_IN),
+            GoogleSignIn.getClient(context, buildGoogleSignInOptions(webClientId, includeScopes = false)),
+            GoogleSignIn.getClient(context, buildGoogleSignInOptions(webClientId, includeScopes = true)),
+        )
+        val aggressiveClear = Build.VERSION.SDK_INT < Build.VERSION_CODES.R
+        if (aggressiveClear) {
+            auth.signOut()
+        }
+        signOutGoogleSignInClients(clients, index = 0) {
+            if (aggressiveClear) {
+                clients.first().revokeAccess().addOnCompleteListener {
+                    onIntent(targetClient.signInIntent)
+                }
+            } else {
+                onIntent(targetClient.signInIntent)
+            }
+        }
+    }
+
+    private fun signOutGoogleSignInClients(
+        clients: List<GoogleSignInClient>,
+        index: Int,
+        onComplete: () -> Unit,
+    ) {
+        if (index >= clients.size) {
+            onComplete()
+            return
+        }
+        clients[index].signOut().addOnCompleteListener {
+            signOutGoogleSignInClients(clients, index + 1, onComplete)
+        }
+    }
+
+    private fun isValidWebClientId(webClientId: String): Boolean {
+        return webClientId.endsWith(".apps.googleusercontent.com") && webClientId.length > 30
     }
 
     private fun buildGoogleSignInOptions(webClientId: String, includeScopes: Boolean): GoogleSignInOptions {
