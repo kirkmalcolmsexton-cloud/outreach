@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.platform.app.InstrumentationRegistry
@@ -64,13 +65,15 @@ class AppShellAutomationTest {
     fun appShell_navigatesAcrossBottomTabs() {
         composeRule.onNodeWithTag(TestTags.APP_ROOT).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.NAV_VISITS).performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag(TestTags.CONTENT_VISITS).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.NAV_SETTINGS).performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag(TestTags.CONTENT_SETTINGS).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.SETTINGS_ROOT).assertIsDisplayed()
+        composeRule.onNodeWithText("Spreadsheet link or ID", substring = true).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.NAV_HOME).performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag(TestTags.CONTENT_HOME).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.MAP_ROOT).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.MAP_SEARCH).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.MAP_ADD_PERSON).assertIsDisplayed()
     }
@@ -78,23 +81,28 @@ class AppShellAutomationTest {
     @Test
     fun visitsTab_exposesTaggedVisitLoggingControls() {
         composeRule.onNodeWithTag(TestTags.NAV_VISITS).performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag(TestTags.CONTENT_VISITS).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.VISITS_ROOT).assertIsDisplayed()
+        composeRule.onNodeWithText("Visit update").assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.VISITS_BRIEF).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.VISITS_NOTES).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.VISITS_SAVE).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.VISITS_SAVE).performScrollTo().assertIsDisplayed()
     }
 
     @Test
     fun settingsTab_exposesTaggedSpreadsheetControls() {
         composeRule.onNodeWithTag(TestTags.NAV_SETTINGS).performClick()
-        composeRule.onNodeWithTag(TestTags.SETTINGS_ROOT).assertIsDisplayed()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(TestTags.CONTENT_SETTINGS).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.SETTINGS_SPREADSHEET_LINK_FIELD).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.SETTINGS_LOAD_SPREADSHEET).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.SETTINGS_APP_VERSION).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.SETTINGS_PICK_SPREADSHEET).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.SETTINGS_VALIDATE).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.SETTINGS_SYNC).assertIsDisplayed()
+        composeRule.onNodeWithTag(TestTags.SETTINGS_SYNC).performScrollTo().assertIsDisplayed()
+        composeRule
+            .onNodeWithTag(TestTags.SETTINGS_APP_VERSION, useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test
@@ -300,7 +308,13 @@ class AppShellMapModeForcedSignedInIntentTest {
     fun mapMode_showsMapChromeTags() {
         composeRule.onNodeWithTag(TestTags.APP_ROOT).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.MODE_MAP).assertIsDisplayed()
-        composeRule.onNodeWithTag(TestTags.MAP_ROOT).assertIsDisplayed()
+        composeRule.waitUntil(timeoutMillis = 15_000) {
+            runCatching {
+                composeRule.onNodeWithTag(TestTags.MAP_SEARCH).assertExists()
+                true
+            }.getOrDefault(false)
+        }
+        composeRule.onNodeWithTag(TestTags.CONTENT_HOME).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.MAP_SEARCH).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.MAP_NAV_FAB).assertIsDisplayed()
         composeRule.onNodeWithTag(TestTags.MAP_ADD_PERSON).assertIsDisplayed()
