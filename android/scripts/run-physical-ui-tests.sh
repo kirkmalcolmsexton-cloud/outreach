@@ -42,7 +42,7 @@ Environment:
 Options:
   --non-interactive   Fail fast if no usable physical device or multiple devices (unless ANDROID_SERIAL set)
   --pick              Pick ANDROID_SERIAL via get-device-serial.sh --pick (physical preferred)
-  --auth mock|real    Instrumentation auth resolution (default: mock)
+  --auth mock|real    Instrumentation auth (default: mock). Interactive runs always mock; use this flag for real.
   --no-reverse        Do not prompt for adb reverse tcp:7747 (debug ingest)
   -h, --help          Show this help
 
@@ -262,23 +262,18 @@ resolve_android_serial() {
   done
 }
 
-prompt_auth_if_interactive() {
-  if [[ "$NON_INTERACTIVE" -eq 1 ]] || [[ "$AUTH_FROM_CLI" -eq 1 ]]; then
-    return
-  fi
-  if [[ "${AUTH_RESOLUTION}" != "mock" ]]; then
-    return
-  fi
+announce_auth_resolution() {
   echo ""
-  read -r -p "Auth resolution [mock/real] (default mock): " ans || true
-  ans="$(echo "$ans" | tr '[:upper:]' '[:lower:]' | tr -d '\r')"
-  [[ -z "$ans" ]] && return
-  case "$ans" in
-    mock | real) AUTH_RESOLUTION="$ans" ;;
-    *)
-      echo "  Unrecognized value; keeping mock."
-      ;;
-  esac
+  echo "run-physical-ui-tests: auth=${AUTH_RESOLUTION}"
+  if [[ "$AUTH_RESOLUTION" == "mock" ]]; then
+    echo "  mock = full connected suite (CI default; force_auth_state extras work)."
+    if [[ "$AUTH_FROM_CLI" -eq 0 ]] && [[ "$NON_INTERACTIVE" -eq 0 ]]; then
+      echo "  For Firebase on device, stop and re-run with: --auth real"
+    fi
+    return
+  fi
+  echo "  real = Firebase session on device only; sign in before Gradle runs."
+  echo "  The default suite ignores force_auth_state; without sign-in, shell tests fail on the login gate."
 }
 
 maybe_prompt_reverse() {
@@ -305,14 +300,13 @@ maybe_pause_for_real_auth() {
   if [[ "$AUTH_RESOLUTION" != "real" ]]; then
     return
   fi
-  echo ""
-  echo "Auth resolution is **real**: tests use Firebase on the device like production."
-  echo "Sign in with Google in the app before or during tests that expect a logged-in user."
-  echo "See docs/ui-testing.md (mock vs real)."
   if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
     return
   fi
-  read -r -p "Press Enter when ready to run Gradle connected tests... " _
+  echo ""
+  echo "Sign in with Google in Outreach on this phone (Firebase + Sheets scopes), then continue."
+  echo "See docs/ui-testing.md (mock vs real)."
+  read -r -p "Press Enter after sign-in (or Ctrl-C to abort)... " _
 }
 
 ensure_google_services_placeholder
@@ -320,14 +314,22 @@ resolve_android_serial
 
 echo ""
 echo "run-physical-ui-tests: Using ANDROID_SERIAL=${ANDROID_SERIAL}"
-prompt_auth_if_interactive
+announce_auth_resolution
 maybe_prompt_reverse
 maybe_pause_for_real_auth
 
 chmod +x "${ANDROID_DIR}/gradlew"
 
-${ANDROID_DIR}/gradlew assembleDebug assembleDebugAndroidTest connectedDebugAndroidTest \
-  -PoutreachAuthResolution="${AUTH_RESOLUTION}" \
-  "${EXTRA_GRADLE[@]}"
+gradle_cmd=(
+  assembleDebug
+  assembleDebugAndroidTest
+  connectedDebugAndroidTest
+  -PoutreachAuthResolution="${AUTH_RESOLUTION}"
+)
+# bash 3.2 + set -u: "${arr[@]}" on an empty array is an unbound variable error.
+if [[ ${#EXTRA_GRADLE[@]} -gt 0 ]]; then
+  gradle_cmd+=("${EXTRA_GRADLE[@]}")
+fi
+"${ANDROID_DIR}/gradlew" "${gradle_cmd[@]}"
 
 echo "run-physical-ui-tests: Done."
