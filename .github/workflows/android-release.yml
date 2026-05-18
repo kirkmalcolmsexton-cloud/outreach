@@ -22,12 +22,12 @@ on:
         type: boolean
         default: true
       play_status:
-        description: Play release status (draft = review in Console before testers)
+        description: Play release status (completed = active on Internal track; draft = hold in Console for manual review)
         type: choice
         options:
           - draft
           - completed
-        default: draft
+        default: completed
 
 concurrency:
   group: android-release-${{ github.ref }}
@@ -188,4 +188,4 @@ jobs:
           packageName: org.outreach.app
           releaseFiles: app-release.aab
           track: internal
-          status: ${{ github.event_name == 'workflow_dispatch' && inputs.play_status || 'draft' }}
+          status: ${{ github.event_name == 'workflow_dispatch' && inputs.play_status || 'completed' }}
