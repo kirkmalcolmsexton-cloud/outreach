@@ -132,6 +132,55 @@ jobs:
         with:
           name: release-bundle
 
+      # #region agent log — Play deploy preflight (hypotheses A–D: SA identity / Play grant / GCP project / package)
+      - name: Play API preflight
+        env:
+          PLAY_STORE_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          echo "$PLAY_STORE_SERVICE_ACCOUNT_JSON" > "${RUNNER_TEMP}/play-sa.json"
+          chmod 600 "${RUNNER_TEMP}/play-sa.json"
+          pip install --quiet google-auth
+          python3 - <<'PY'
+          import json, os, sys, time, urllib.error, urllib.request
+          from pathlib import Path
+          from google.auth.transport.requests import Request
+          from google.oauth2 import service_account
+
+          key_path = Path(os.environ["RUNNER_TEMP"]) / "play-sa.json"
+          sa = json.loads(key_path.read_text())
+          data = {
+              "client_email": sa.get("client_email"),
+              "project_id": sa.get("project_id"),
+              "package": "org.outreach.app",
+          }
+          print("::notice title=Play deploy identity::" + json.dumps(data))
+          creds = service_account.Credentials.from_service_account_file(
+              str(key_path),
+              scopes=["https://www.googleapis.com/auth/androidpublisher"],
+          )
+          creds.refresh(Request())
+          url = "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/org.outreach.app/edits"
+          req = urllib.request.Request(
+              url, method="POST", headers={"Authorization": f"Bearer {creds.token}", "Content-Length": "0"}
+          )
+          try:
+              with urllib.request.urlopen(req) as resp:
+                  data["http_status"] = resp.status
+                  data["api_result"] = "ok"
+                  print(f"::notice title=Play preflight::edit create HTTP {resp.status}")
+          except urllib.error.HTTPError as e:
+              data["http_status"] = e.code
+              data["api_error"] = e.read().decode(errors="replace")[:500]
+              print(f"::error title=Play preflight::HTTP {e.code} body={data['api_error']}")
+              print(
+                  "::error::In Play Console → Users and permissions, invite "
+                  f"{sa.get('client_email')} with Admin or 'Release apps to testing tracks' for org.outreach.app."
+              )
+              sys.exit(1)
+          PY
+      # #endregion
+
       - name: Upload to Play Internal testing
         uses: r0adkll/upload-google-play@v1
         with:
