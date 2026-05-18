@@ -116,7 +116,7 @@ The workflow prefers **repo mode** when **`secrets/upload-keystore.jks.age`** ex
 1. Both **`release-readiness`** and **`bundle-release`** finish green.
 2. Artifact **`release-bundle`** contains **`app-release.aab`**.
 3. **`deploy-play-internal`** shows **Waiting for review** → approve under **Review deployments** (environment **`play-internal-release`**).
-4. After approval, job completes; Play Console → **Testing → Internal testing** shows the new release (**draft** by default on push; promote in Console if needed).
+4. After approval, job completes; Play Console → **Testing → Internal testing** shows the new release as **active** on the Internal track (no Console promote step for the default push path). For a manual workflow run, you can still choose **play_status: draft** to upload without auto-publishing.
 
 **PRs** targeting **`release/**`** / **`hotfix/**`** run **`release-readiness`** only (no bundle or Play deploy).
 
