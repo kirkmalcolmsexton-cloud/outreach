@@ -27,7 +27,7 @@
 #   OUTREACH_DRY_RUN                  Set to 1 to print actions only (no keytool, no gh secret set)
 #   OUTREACH_OVERWRITE_KEYSTORE       Set to 1 to replace an existing file at OUTREACH_UPLOAD_KEYSTORE_PATH
 #
-# Legacy secrets written (GitHub Actions, android-release-build.yml):
+# Legacy secrets written (GitHub Actions, android-release.yml bundle-release):
 #   ANDROID_UPLOAD_KEYSTORE_BASE64, ANDROID_UPLOAD_KEYSTORE_PASSWORD, ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD
 #
 set -euo pipefail

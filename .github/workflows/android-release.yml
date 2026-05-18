@@ -1,0 +1,191 @@
+# Unified release pipeline: parallel readiness + signed bundle, then approved Play Internal deploy.
+# Operators: PLAY_STORE_SERVICE_ACCOUNT_JSON + Environment "play-internal-release" (required reviewers).
+# See docs/release-process.md and docs/github-actions-secrets.md.
+name: Android release
+
+on:
+  pull_request:
+    branches:
+      - "release/**"
+      - "hotfix/**"
+    paths:
+      - "android/**"
+      - ".github/workflows/android-release.yml"
+  push:
+    branches:
+      - "release/**"
+      - "hotfix/**"
+  workflow_dispatch:
+    inputs:
+      deploy_to_play:
+        description: Upload AAB to Play Internal testing after build (requires approval)
+        type: boolean
+        default: true
+      play_status:
+        description: Play release status (draft = review in Console before testers)
+        type: choice
+        options:
+          - draft
+          - completed
+        default: draft
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  OUTREACH_SECRETS_PASSPHRASE: ${{ secrets.OUTREACH_SECRETS_PASSPHRASE }}
+  ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+  ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+  ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+  ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+
+jobs:
+  release-readiness:
+    runs-on: ubuntu-latest
+    env:
+      MAPS_API_KEY: ci-placeholder-maps-not-used-at-runtime
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Place Firebase config for CI
+        run: cp app/google-services.json.example app/google-services.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Match versionName to branch X.Y.Z
+        working-directory: ${{ github.workspace }}
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || github.ref_name }}
+        run: bash "${GITHUB_WORKSPACE}/android/scripts/ci-release-version-check.sh"
+
+      - name: Release lint and unit tests
+        run: chmod +x ./gradlew && ./gradlew lintRelease testReleaseUnitTest --no-daemon
+
+  bundle-release:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require OUTREACH_SECRETS_PASSPHRASE
+        run: |
+          if [ -z "${OUTREACH_SECRETS_PASSPHRASE:-}" ]; then
+            echo "::error::Repository secret OUTREACH_SECRETS_PASSPHRASE is not set or not available to this workflow (empty value)."
+            exit 1
+          fi
+
+      - name: Install age, jq, expect
+        run: sudo apt-get update && sudo apt-get install -y age jq expect
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Bundle release
+        run: |
+          set -euo pipefail
+          chmod +x android/gradlew
+          bash "${GITHUB_WORKSPACE}/android/scripts/build.sh" release-bundle
+
+      - name: Upload release bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          path: android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+
+  deploy-play-internal:
+    needs: [release-readiness, bundle-release]
+    if: >
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_dispatch' || inputs.deploy_to_play)
+    runs-on: ubuntu-latest
+    environment: play-internal-release
+    steps:
+      - name: Require Play service account
+        env:
+          PLAY_STORE_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "${PLAY_STORE_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "::error::Secret PLAY_STORE_SERVICE_ACCOUNT_JSON is not set (repository or play-internal-release environment secret)."
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+
+      # #region agent log — Play deploy preflight (hypotheses A–D: SA identity / Play grant / GCP project / package)
+      - name: Play API preflight
+        env:
+          PLAY_STORE_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          echo "$PLAY_STORE_SERVICE_ACCOUNT_JSON" > "${RUNNER_TEMP}/play-sa.json"
+          chmod 600 "${RUNNER_TEMP}/play-sa.json"
+          pip install --quiet google-auth
+          python3 - <<'PY'
+          import json, os, sys, time, urllib.error, urllib.request
+          from pathlib import Path
+          from google.auth.transport.requests import Request
+          from google.oauth2 import service_account
+
+          key_path = Path(os.environ["RUNNER_TEMP"]) / "play-sa.json"
+          sa = json.loads(key_path.read_text())
+          data = {
+              "client_email": sa.get("client_email"),
+              "project_id": sa.get("project_id"),
+              "package": "org.outreach.app",
+          }
+          print("::notice title=Play deploy identity::" + json.dumps(data))
+          creds = service_account.Credentials.from_service_account_file(
+              str(key_path),
+              scopes=["https://www.googleapis.com/auth/androidpublisher"],
+          )
+          creds.refresh(Request())
+          url = "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/org.outreach.app/edits"
+          req = urllib.request.Request(
+              url, method="POST", headers={"Authorization": f"Bearer {creds.token}", "Content-Length": "0"}
+          )
+          try:
+              with urllib.request.urlopen(req) as resp:
+                  data["http_status"] = resp.status
+                  data["api_result"] = "ok"
+                  print(f"::notice title=Play preflight::edit create HTTP {resp.status}")
+          except urllib.error.HTTPError as e:
+              data["http_status"] = e.code
+              data["api_error"] = e.read().decode(errors="replace")[:500]
+              print(f"::error title=Play preflight::HTTP {e.code} body={data['api_error']}")
+              print(
+                  "::error::In Play Console → Users and permissions, invite "
+                  f"{sa.get('client_email')} with Admin or 'Release apps to testing tracks' for org.outreach.app."
+              )
+              sys.exit(1)
+          PY
+      # #endregion
+
+      - name: Upload to Play Internal testing
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
+          packageName: org.outreach.app
+          releaseFiles: app-release.aab
+          track: internal
+          status: ${{ github.event_name == 'workflow_dispatch' && inputs.play_status || 'draft' }}

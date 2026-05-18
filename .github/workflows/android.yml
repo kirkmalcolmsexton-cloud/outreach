@@ -15,15 +15,10 @@ on:
       - "android/**"
       - "scripts/**"
       - ".github/workflows/android.yml"
-  pull_request:
-    paths:
-      - "android/**"
-      - "scripts/**"
-      - ".github/workflows/android.yml"
   workflow_dispatch:
 
 concurrency:
-  group: android-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: android-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -32,7 +27,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    # Fork PRs: no repository secrets beyond GITHUB_TOKEN; same build path as internal PRs.
+    # Branch push only (no pull_request); no repository secrets beyond GITHUB_TOKEN.
     env:
       MAPS_API_KEY: ci-placeholder-maps-not-used-at-runtime
     defaults:

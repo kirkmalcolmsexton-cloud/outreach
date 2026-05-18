@@ -64,29 +64,58 @@ Status check names in the GitHub UI are usually **`Workflow display name / job i
 |----------------|------------------------|--------|----------------|
 | [`.github/workflows/android.yml`](../.github/workflows/android.yml) | **Android CI** | **`verify`** | **`android/scripts/build.sh` `ci` `verify`** (Firebase example + **`check`**). |
 | Same | Same | **`instrumented`** | **`build.sh` `ci` `build-instrumented-apks`**, then API **34** / **x86_64** emulator, then **`build.sh` `ci` `connected-mock`**. |
-| [`.github/workflows/android-release-readiness.yml`](../.github/workflows/android-release-readiness.yml) | **Android release readiness** | **`release-readiness`** | When PR **base** is **`release/**`** or **`hotfix/**`**: version check script, **`lintRelease`**, **`testReleaseUnitTest`**. |
-| [`.github/workflows/android-release-build.yml`](../.github/workflows/android-release-build.yml) | **Android release bundle** | **`bundle-release`** | **`workflow_dispatch`** or **push** to **`release/**`** / **`hotfix/**`**: runs **`build.sh` `release-bundle`** (alias **`build-release-bundle.sh`**, upload **`.aab`**). See **[`github-actions-secrets.md`](github-actions-secrets.md)**. |
+| [`.github/workflows/android-release.yml`](../.github/workflows/android-release.yml) | **Android release** | **`release-readiness`** | **PR** or **push** to **`release/**`** / **`hotfix/**`**: version check, **`lintRelease`**, **`testReleaseUnitTest`**. |
+| Same | Same | **`bundle-release`** | **push** / **`workflow_dispatch`** only: **`build.sh` `release-bundle`**, upload **`.aab`** artifact. See **[`github-actions-secrets.md`](github-actions-secrets.md)**. |
+| Same | Same | **`deploy-play-internal`** | After parallel jobs succeed: **environment approval** → Play **Internal** track. |
 | [`.github/workflows/android-version-bump.yml`](../.github/workflows/android-version-bump.yml) | **Android version bump** | **`bump`** | Manual only on **`release/**`** / **`hotfix/**`**: bumps **`outreach.version*`** in **`gradle.properties`** (never **`main`**). |
-| [`.github/workflows/dependency-review.yml`](../.github/workflows/dependency-review.yml) | Dependency Review | **`dependency-review`** | Supply-chain review (requires dependency graph where applicable). |
-| [`.github/workflows/secret-scan.yml`](../.github/workflows/secret-scan.yml) | **Secret Scan** | **`gitleaks`** | Secret scanning. |
+| [`.github/workflows/dependency-review.yml`](../.github/workflows/dependency-review.yml) | Dependency Review | **`dependency-review`** | Supply-chain review on **`pull_request`** only (GitHub has no push equivalent). |
+| [`.github/workflows/secret-scan.yml`](../.github/workflows/secret-scan.yml) | **Secret Scan** | **`gitleaks`** | Secret scanning on **push** to any branch. |
 
-**Triggers and paths:** **`android.yml`** runs on **`push`** / **`pull_request`** when **`android/**`**, **`scripts/**`** (shared bash used by **`build.sh release-bundle`**, signing helpers, …), or that workflow file changes — docs-only PRs may skip Android CI unless they touch listed paths. **`android-release-build.yml`** does **not** run on arbitrary PRs from forks with secrets; see **`github-actions-secrets.md`**.
+**Triggers and paths:** **`android.yml`** and **`secret-scan.yml`** run on **`push`** / **`pull_request`** (path-filtered). **`android-release.yml`** runs **`release-readiness`** on **PR** and **push** to **`release/**`** / **`hotfix/**`**; **`bundle-release`** and **`deploy-play-internal`** run on **push** and **`workflow_dispatch`** only. See **`github-actions-secrets.md`**. **`dependency-review.yml`** runs on **`pull_request`** for all branches.
 
-**Concurrency:** Workflows use **`concurrency`** so newer runs cancel superseded ones on the same branch/ref where configured.
+**Concurrency:** Workflows use **`concurrency`** keyed by **`github.ref`** so newer runs cancel superseded ones on the same branch.
+
+---
+
+## Branch builds vs PR merge gates
+
+CI **builds** run on **`push`** to the source branch. **PRs** still require those checks to pass on the **head commit** before merge — GitHub attaches check results to the commit SHA, not the event type.
+
+**Contributor workflow:**
+
+1. **Push** (or re-push) your branch and wait for Actions to finish on that commit.
+2. Open or update the PR — the **Checks** tab should show the same status names as the branch push run.
+3. After rebasing onto **`develop`**, **`main`**, or a release branch, **push again** so CI re-runs on the new head SHA.
+
+Opening a PR alone does **not** start **Android CI** or **Secret Scan** on the PR event — those attach to **push** on the head branch. **PRs into `release/**`** also run **`Android release / release-readiness`**. **Dependency Review** runs on every **`pull_request`**.
+
+**Rulesets (GitHub → Settings → Rules → Rulesets):** On **`develop`**, **`main`**, **`release/**`**, and **`hotfix/**`**, enable:
+
+- **Require status checks to pass before merging** — use the **exact** check names from the table below.
+- **Require branches to be up to date before merging** — forces a fresh push (and branch build) after the target branch moves.
 
 ---
 
 ## Merge quality gates (branch rulesets)
 
-Configure **GitHub Rulesets → Required status checks** using the **exact** strings from the PR **Checks** tab (often **`Workflow name / job id`**).
+Configure **GitHub Rulesets → Required status checks** using the **exact** strings from the PR **Checks** tab (often **`Workflow name / job id`**). Checks must have completed on the PR’s **head commit** (from a branch **`push`**, except **Dependency Review**).
 
 | Typical PR target | Often required checks |
 |-------------------|------------------------|
 | **`develop`** | **`Android CI / verify`**, **`Android CI / instrumented`** *(optional by policy)*, **`Dependency Review / dependency-review`**, **`Secret Scan / gitleaks`** *(names may vary slightly)* |
-| **`release/**`** or **`hotfix/**`** | Above + **`Android release readiness / release-readiness`** *(exact name from Checks)* |
+| **`release/**`** or **`hotfix/**`** | Above + **`Android release / release-readiness`** on PR head commit *(exact name from Checks)* |
 | **`main`** | Mirror team policy — often aligned with **`release/**`**. |
 
 **Disable a gate safely:** remove it from Rulesets **before** deleting or renaming the workflow job — otherwise merges can wait forever on a missing check.
+
+### Validate rulesets (dry run)
+
+After enabling required checks:
+
+1. Push a commit to a feature branch that touches **`android/**`** (or use **`gh workflow run "Android CI" --ref my-branch`**).
+2. Confirm **Actions** shows **push** runs for **Android CI** and **Secret Scan** (not duplicate PR runs for those workflows).
+3. Open a PR into **`develop`** — **Checks** should list the branch-build results on the head SHA plus **Dependency Review** from the PR event.
+4. Rebase onto latest **`develop`**, push, and confirm new checks run before merge is allowed.
 
 ---
 
@@ -124,14 +153,14 @@ Use **`gh run list`** to find **`<run-id>`**, or open the run in the browser fro
 
 ### Dispatch a workflow manually
 
-Workflows that define **`workflow_dispatch`** (for example **Android CI**, **Android release bundle**) can be started from the UI (**Actions → workflow → Run workflow**) or:
+Workflows that define **`workflow_dispatch`** (for example **Android CI**, **Android release**) can be started from the UI (**Actions → workflow → Run workflow**) or:
 
 ```bash
 gh workflow run "Android CI"
 ```
 
 ```bash
-gh workflow run "Android release bundle"
+gh workflow run "Android release"
 ```
 
 Branch:
@@ -140,7 +169,7 @@ Branch:
 gh workflow run "Android CI" --ref my-branch
 ```
 
-**Release bundle** requires **`OUTREACH_SECRETS_PASSPHRASE`**, plus either repo-mode signing (**`secrets/upload-keystore.jks.age`** + **`android_upload_signing`** in plaintext JSON behind **`outreach-secrets.json.age`**) or all legacy **`ANDROID_UPLOAD_*`** secrets ([**`github-actions-secrets.md`](github-actions-secrets.md)**).
+**Android release** **`bundle-release`** requires **`OUTREACH_SECRETS_PASSPHRASE`**, plus either repo-mode signing or legacy **`ANDROID_UPLOAD_*`** secrets. **`deploy-play-internal`** requires **`PLAY_STORE_SERVICE_ACCOUNT_JSON`** and environment **`play-internal-release`** with reviewers ([**`github-actions-secrets.md`](github-actions-secrets.md)**).
 
 ### PR checks from the terminal
 
@@ -160,6 +189,6 @@ Setting secrets is usually done in the GitHub UI or via **`gh secret set NAME --
 
 ---
 
-## Continuous deployment (optional)
+## Continuous deployment (Play Internal)
 
-If you add a workflow that uploads to Play Internal, chain **`needs:`** to **`verify`** / **`release-readiness`** (by job id) before any signing/upload job. Store API credentials as repository secrets and document them like **`ANDROID_UPLOAD_*`**.
+**[`android-release.yml`](../.github/workflows/android-release.yml)** uploads to Play **Internal testing** after **`release-readiness`** and **`bundle-release`** succeed. **`deploy-play-internal`** uses environment **`play-internal-release`** for required reviewer approval before upload. Configure secrets per **[`github-actions-secrets.md`](github-actions-secrets.md)**.

@@ -9,7 +9,7 @@ Use this checklist the first time you expect CI to produce a **signed** **`.aab`
 ### Prerequisites (before any step)
 
 - **Repository:** Permission to add **Actions** repository secrets on this GitHub repo (maintainer/admin as required by org policy).
-- **Branch:** Signing and **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** must be **merged** into the branch you will run Actions on (typically **`develop`** → **`release/X.Y.Z`**).
+- **Branch:** Signing and **[`android-release.yml`](../.github/workflows/android-release.yml)** must be **merged** into the branch you will run Actions on (typically **`develop`** → **`release/X.Y.Z`**).
 - **Files in repo:** Committed **`secrets/outreach-secrets.json.age`** and teammate-shared passphrase for decryption (same as local **`encrypt-secrets.sh`** / **`setup-secrets.sh`**).
 - **Tools:** **JDK** (`keytool`), **`age`**, **`jq`**, **`expect`** (repo-mode keystore encrypt/decrypt paths), **GitHub CLI** **`gh`** (**legacy** Path B only — **`gh auth login`**), **Git** clone of the repo.
 
@@ -22,7 +22,7 @@ Use this checklist the first time you expect CI to produce a **signed** **`.aab`
 **Do:**
 
 1. Open [`android/app/build.gradle.kts`](../android/app/build.gradle.kts) and confirm **`signingConfigs`** / **`ANDROID_UPLOAD_*`** wiring exists for **`release`**.
-2. Open **[`.github/workflows/android-release-build.yml`](../.github/workflows/android-release-build.yml)** and confirm the job runs **`android/scripts/build.sh release-bundle`** (same as **`build-release-bundle.sh`** locally) with repository **`OUTREACH_SECRETS_PASSPHRASE`** and, for **legacy** signing, the four **`ANDROID_UPLOAD_*`** secrets.
+2. Open **[`.github/workflows/android-release.yml`](../.github/workflows/android-release.yml)** and confirm **`bundle-release`** runs **`android/scripts/build.sh release-bundle`** (same as **`build-release-bundle.sh`** locally) with repository **`OUTREACH_SECRETS_PASSPHRASE`** and, for **legacy** signing, the four **`ANDROID_UPLOAD_*`** secrets.
 
 **Verify:** Merged on **`main`** / **`develop`** / your release branch per your team’s process.
 
@@ -38,7 +38,7 @@ Use this checklist the first time you expect CI to produce a **signed** **`.aab`
 2. **Name:** **`OUTREACH_SECRETS_PASSPHRASE`** (exact spelling).
 3. **Value:** The passphrase your team uses to encrypt/decrypt **`outreach-secrets.json.age`**.
 
-**Verify:** Run **Android release bundle** once; if this is missing or wrong, the job fails in the step **Require OUTREACH_SECRETS_PASSPHRASE** or during **`setup-secrets.sh`** / **`age`** decrypt — not during Gradle signing yet.
+**Verify:** Run **Android release** once on a **`release/`** branch; if this is missing or wrong, **`bundle-release`** fails in **Require OUTREACH_SECRETS_PASSPHRASE** or during **`setup-secrets.sh`** / **`age`** decrypt — not during Gradle signing yet.
 
 ---
 
@@ -102,22 +102,29 @@ The workflow prefers **repo mode** when **`secrets/upload-keystore.jks.age`** ex
 
 ---
 
-### Step 5 — Run **Android release bundle** on GitHub Actions
+### Step 5 — Run **Android release** on GitHub Actions
 
-**Goal:** Workflow runs **`bundleRelease`** and uploads an **`.aab`** artifact.
+**Goal:** On **push** to **`release/**`** or **`hotfix/**`**, CI runs **`release-readiness`** and **`bundle-release`** in parallel, uploads **`release-bundle`** artifact, then waits for approval to deploy to Play **Internal testing**.
 
 **Do (pick one):**
 
-- **Push:** Push a commit to **`release/**`** or **`hotfix/**`** (same patterns as workflow **`on.push.branches`**), **or**
-- **Dispatch:** **Actions** → **Android release bundle** → **Run workflow**, choose the **`release/`** / **`hotfix/`** branch.
+- **Push:** Push a commit to **`release/**`** or **`hotfix/**`**, **or**
+- **Dispatch:** **Actions** → **Android release** → **Run workflow** on the **`release/`** / **`hotfix/`** branch (optional: disable **deploy_to_play** to build only).
 
-**Verify:** Workflow finishes green; artifact **`release-bundle`** contains **`app-release.aab`** (path under **`android/app/build/outputs/bundle/release/`** in the job).
+**Verify:**
+
+1. Both **`release-readiness`** and **`bundle-release`** finish green.
+2. Artifact **`release-bundle`** contains **`app-release.aab`**.
+3. **`deploy-play-internal`** shows **Waiting for review** → approve under **Review deployments** (environment **`play-internal-release`**).
+4. After approval, job completes; Play Console → **Testing → Internal testing** shows the new release (**draft** by default on push; promote in Console if needed).
+
+**PRs** targeting **`release/**`** / **`hotfix/**`** run **`release-readiness`** only (no bundle or Play deploy).
 
 ---
 
-### Step 6 — Download the `.aab`
+### Step 6 — Download the `.aab` (optional)
 
-**Goal:** You have the store bundle file for Play Console upload.
+**Goal:** Local copy for inspection or manual upload fallback.
 
 **Do:** Open the successful run → **Artifacts** → download **`release-bundle`**.
 
@@ -125,18 +132,20 @@ The workflow prefers **repo mode** when **`secrets/upload-keystore.jks.age`** ex
 
 ---
 
-### Step 7 — Google Play Console (first upload path)
+### Step 7 — Play Console and first-time CD setup
 
-**Goal:** App exists in Play (or new version on existing app); **Play App Signing** is understood; binary is on **Internal** or **Closed testing** before production.
+**Goal:** App exists in Play; API access and GitHub are wired for automated Internal uploads.
 
-**Do:**
+**Do (one-time):**
 
-1. Open [Google Play Console](https://play.google.com/console) → select **app** (create if first time).
-2. Confirm **Play App Signing** enrollment for the app (follow Google’s prompts).
-3. **Testing → Internal testing** or **Closed testing** → **Create release** → upload the **`.aab`** from Step 6.
-4. Complete any **policy / content** steps Google requires for that track.
+1. Open [Google Play Console](https://play.google.com/console) → create or select the app; confirm **Play App Signing**.
+2. **Setup → API access** → link GCP project → create service account → grant **Release to testing tracks** → download JSON key.
+3. GitHub → **Settings → Secrets and variables → Actions** → **`PLAY_STORE_SERVICE_ACCOUNT_JSON`** (full JSON), or add it to environment **`play-internal-release`**.
+4. GitHub → **Settings → Environments** → create **`play-internal-release`** with **Required reviewers** (and optional deployment branch rules for **`release/**`** / **`hotfix/**`**).
 
-**Verify:** Release shows as processing / available to testers per your track configuration.
+**Manual fallback:** **Testing → Internal testing** → upload the **`.aab`** from Step 6 if CD is disabled or **`deploy_to_play`** is false.
+
+**Verify:** After an approved **`deploy-play-internal`** run, Internal testing shows the build; complete any **policy / content** steps Google requires.
 
 ---
 
@@ -180,7 +189,7 @@ Steps **2** (passphrase) and **3** (signing material) can be prepared in either 
 
 ### If CI already failed once
 
-**Symptom:** Red **Android release bundle** run.
+**Symptom:** Red **Android release** run.
 
 **Do:**
 
@@ -193,7 +202,7 @@ Steps **2** (passphrase) and **3** (signing material) can be prepared in either 
 
 ### What `create-upload-keystore-and-gh-secrets.sh` does not do
 
-It does **not** create the Play listing, finish **Play Console** setup, or upload **`.aab`** to Play — Steps **7**–**9** stay manual unless you add separate CD automation later.
+It does **not** create the Play listing or finish initial **Play Console** onboarding — complete Step **7** API/environment setup once; thereafter **`deploy-play-internal`** uploads to **Internal testing** after approval.
 
 ---
 
@@ -205,7 +214,8 @@ Each row maps to **Settings → Secrets and variables → Actions → New reposi
 
 | Secret | Purpose | Used by |
 |--------|---------|---------|
-| **`OUTREACH_SECRETS_PASSPHRASE`** | Passphrase for **`secrets/outreach-secrets.json.age`** (and repo-mode **`upload-keystore.jks.age`**) for **`setup-secrets.sh`** / **`build.sh release-bundle`** | **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** |
+| **`OUTREACH_SECRETS_PASSPHRASE`** | Passphrase for **`secrets/outreach-secrets.json.age`** (and repo-mode **`upload-keystore.jks.age`**) for **`setup-secrets.sh`** / **`build.sh release-bundle`** | **[`android-release.yml`](../.github/workflows/android-release.yml)** job **`bundle-release`** |
+| **`PLAY_STORE_SERVICE_ACCOUNT_JSON`** | Play Android Publisher API service account key (JSON) | **`deploy-play-internal`** (repo or **`play-internal-release`** environment secret) |
 
 ### Upload signing
 
@@ -215,20 +225,20 @@ Each row maps to **Settings → Secrets and variables → Actions → New reposi
 
 | Secret | Purpose | Used by |
 |--------|---------|---------|
-| **`ANDROID_UPLOAD_KEYSTORE_BASE64`** | Upload keystore file (binary), **base64-encoded** (single line) | **[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** |
+| **`ANDROID_UPLOAD_KEYSTORE_BASE64`** | Upload keystore file (binary), **base64-encoded** (single line) | **`bundle-release`** in **[`android-release.yml`](../.github/workflows/android-release.yml)** |
 | **`ANDROID_UPLOAD_KEYSTORE_PASSWORD`** | Keystore password | Same |
 | **`ANDROID_UPLOAD_KEY_ALIAS`** | Key alias inside the keystore | Same |
 | **`ANDROID_UPLOAD_KEY_PASSWORD`** | Key password | Same |
 
 Populate legacy **`ANDROID_UPLOAD_*`** with **[`android/scripts/create-upload-keystore-and-gh-secrets.sh`](../android/scripts/create-upload-keystore-and-gh-secrets.sh)** (without **`OUTREACH_SIGNING_REPO_MODE`**) or manually. **`GITHUB_TOKEN`** is automatic and is not a repository secret.
 
-Secrets are **not** passed to **`pull_request`** workflows from forks — see **[`github-actions-secrets.md`](github-actions-secrets.md#fork-and-pull-request-caveat)**.
+Fork and branch-build signing caveats — see **[`github-actions-secrets.md` → Fork and branch-build caveat](github-actions-secrets.md#fork-and-branch-build-caveat)**.
 
 ---
 
 ## GitFlow overview
 
-This repo follows **classic GitFlow**: **`main`** matches what ships on **Google Play**; **`develop`** integrates feature work. **CI** runs gates on PRs; **shipping** to Play is a human cut (branch, **`bundleRelease`**, Console) unless you add CD.
+This repo follows **classic GitFlow**: **`main`** matches what ships on **Google Play**; **`develop`** integrates feature work. **CI** runs on **branch push**; **PR rulesets** require those checks (and **Dependency Review**) on the head commit before merge. **Shipping** to Play is a human cut (branch, **`bundleRelease`**, Console) unless you add CD.
 
 ### Branches
 
@@ -276,7 +286,13 @@ This repo follows **classic GitFlow**: **`main`** matches what ships on **Google
 
 ## Automation
 
-**[`android-release-build.yml`](../.github/workflows/android-release-build.yml)** runs on **`workflow_dispatch`** and on **push** to **`release/**`** or **`hotfix/**`**. The step **Bundle release** invokes **`"${GITHUB_WORKSPACE}/android/scripts/build.sh" release-bundle`** (same as local **`build-release-bundle.sh`**): **`setup-secrets`**, **`scripts/decrypt-age-passphrase.sh`** for repo-mode keystore, **`./gradlew bundleRelease`**, then uploads the **`.aab`** as the **`release-bundle`** artifact.
+**[`android-release.yml`](../.github/workflows/android-release.yml)** (**Android release**):
+
+| Job | When | What |
+|-----|------|------|
+| **`release-readiness`** | **PR** or **push** to **`release/**`** / **`hotfix/**`** | Version check, **`lintRelease`**, **`testReleaseUnitTest`** |
+| **`bundle-release`** | **push** / **`workflow_dispatch`** only | **`build.sh release-bundle`** → **`release-bundle`** artifact |
+| **`deploy-play-internal`** | After both succeed on **push** / dispatch (if enabled) | Environment **`play-internal-release`** approval → Play **Internal** track via API |
 
 For workflows, **`gh`**, and merge gates, see **[`ci-cd.md`](ci-cd.md)**. Secret names and fork caveats: **[`github-actions-secrets.md`](github-actions-secrets.md)**.
 
