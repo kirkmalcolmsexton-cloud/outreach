@@ -243,10 +243,10 @@ dependencies {
 
     implementation("androidx.compose.material3:material3:1.3.0")
     implementation("androidx.compose.material:material-icons-extended:1.7.1")
-    implementation("androidx.compose.ui:ui:1.7.1")
-    implementation("androidx.compose.ui:ui-tooling-preview:1.7.1")
-    debugImplementation("androidx.compose.ui:ui-tooling:1.7.1")
-    debugImplementation("androidx.compose.ui:ui-test-manifest:1.7.1")
+    implementation("androidx.compose.ui:ui:1.11.1")
+    implementation("androidx.compose.ui:ui-tooling-preview:1.11.1")
+    debugImplementation("androidx.compose.ui:ui-tooling:1.11.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest:1.11.1")
 
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("com.google.android.gms:play-services-basement:18.5.0")
@@ -266,6 +266,6 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.7.1")
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.11.1")
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
